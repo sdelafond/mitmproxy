@@ -1,0 +1,70 @@
+Metadata-Version: 1.0
+Name: mitmproxy
+Version: 0.6
+Summary: An interactive SSL-capable intercepting HTTP proxy for penetration testers and software developers.
+Home-page: http://mitmproxy.org
+Author: Aldo Cortesi
+Author-email: aldo@corte.si
+License: UNKNOWN
+Description: 
+        __mitmproxy__ is an SSL-capable man-in-the-middle proxy for HTTP. It provides a
+        console interface that allows traffic flows to be inspected and edited on the
+        fly.
+        
+        __mitmdump__ is the command-line version of mitmproxy, with the same
+        functionality but without the frills. Think tcpdump for HTTP.
+        
+        Both tools are fully documentented in the commandline _--help_ flag, and, in
+        the case of __mitmproxy__, a built-in help page accessible through the _?_
+        keyboard shortcut.
+        
+        
+        Capabilities
+        ------------
+        
+        - Intercept HTTP requests and responses and modify them on the fly.
+        - Save complete HTTP conversations for later replay and analysis.
+        - Replay the client-side of an HTTP conversations.
+        - Replay HTTP responses of a previously recorded server.
+        - Make scripted changes to HTTP traffic using Python. 
+        - SSL certificates for interception are generated on the fly.
+        
+        
+        Download
+        --------
+        
+        Releases and rendered documentation can be found on the mitmproxy website:
+        
+        [mitmproxy.org](http://mitmproxy.org)
+        
+        Source is hosted on github: 
+        
+        [github.com/cortesi/mitmproxy](http://github.com/cortesi/mitmproxy)
+        
+        
+        Requirements
+        ------------
+        
+        * [Python](http://www.python.org) 2.6.x or 2.7.x.
+        * [openssl](http://www.openssl.org/) - installed by default on most systems.
+        * [urwid](http://excess.org/urwid/) version 0.9.8 or newer.
+        * The test suite uses the [pry](http://github.com/cortesi/pry) unit testing
+          library.
+        * Rendering the documentation requires [countershape](http://github.com/cortesi/countershape).
+        
+        __mitmproxy__ is tested and developed on OSX, Linux and OpenBSD. 
+        
+        You should also make sure that your console environment is set up with the
+        following: 
+            
+        * EDITOR environment variable to determine the external editor.
+        * PAGER environment variable to determine the external pager.
+        * Appropriate entries in your mailcap files to determine external
+          viewers for request and response contents.
+        
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Programming Language :: Python
+Classifier: Topic :: Security
+Classifier: Topic :: Internet :: WWW/HTTP
+Classifier: Topic :: Software Development :: Testing
