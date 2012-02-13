@@ -1,0 +1,5 @@
+mitmproxy (0.6-1) unstable; urgency=low
+
+  * Initial release (Closes: #659613).
+
+ -- Sebastien Delafond <seb@debian.org>  Mon, 13 Feb 2012 11:46:52 +0100
