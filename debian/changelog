@@ -1,3 +1,9 @@
+mitmproxy (0.6-2) unstable; urgency=low
+
+  * Add Vcs-* info to control file
+
+ -- Sebastien Delafond <seb@debian.org>  Sat, 18 Feb 2012 10:04:08 +0100
+
 mitmproxy (0.6-1) unstable; urgency=low
 
   * Initial release (Closes: #659613).
