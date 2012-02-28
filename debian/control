@@ -1,5 +1,5 @@
 Source: mitmproxy
-Section: network
+Section: net
 Priority: optional
 Maintainer: Sebastien Delafond <seb@debian.org>
 Build-Depends: python-all-dev (>= 2.6.6-3~), cdbs (>= 0.4.90~), debhelper (>= 6)
