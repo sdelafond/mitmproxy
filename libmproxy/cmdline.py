@@ -1,3 +1,18 @@
+# Copyright (C) 2012  Aldo Cortesi
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 import proxy
 import optparse
 
@@ -65,6 +80,11 @@ def common_options(parser):
         help = "Proxy service port."
     )
     parser.add_option(
+        "-R",
+        action="store", dest="reverse_proxy", default=None,
+        help="Reverse proxy to upstream server: http[s]://host[:port]"
+    )
+    parser.add_option(
         "-q",
         action="store_true", dest="quiet",
         help="Quiet."
@@ -114,7 +134,13 @@ def common_options(parser):
         action="store_true", dest="anticomp", default=False,
         help="Try to convince servers to send us un-compressed data."
     )
-
+    parser.add_option(
+        "-Z",
+        action="store", dest="body_size_limit", default=None,
+        metavar="SIZE",
+        help="Byte size limit of HTTP request and response bodies."\
+             " Understands k/m/g suffixes, i.e. 3m for 3 megabytes."
+    )
     group = optparse.OptionGroup(parser, "Client Replay")
     group.add_option(
         "-c",

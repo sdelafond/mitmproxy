@@ -1,18 +1,29 @@
+# Copyright (C) 2012  Aldo Cortesi
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
     This module provides more sophisticated flow tracking. These match requests
     with their responses, and provide filtering and interception facilities.
 """
-import json, hashlib, Cookie, cookielib, base64, copy, re
+import hashlib, Cookie, cookielib, copy, re, urlparse
 import time
-import netstring, filt, script, utils, encoding, proxy
+import tnetstring, filt, script, utils, encoding, proxy
 from email.utils import parsedate_tz, formatdate, mktime_tz
 import controller, version
 
-class RunException(Exception):
-    def __init__(self, msg, returncode, errout):
-        Exception.__init__(self, msg)
-        self.returncode = returncode
-        self.errout = errout
+HDR_FORM_URLENCODED = "application/x-www-form-urlencoded"
 
 
 class ScriptContext:
@@ -21,29 +32,51 @@ class ScriptContext:
 
     def log(self, *args, **kwargs):
         """
-            Logs an event. 
-            
+            Logs an event.
+
             How this is handled depends on the front-end. mitmdump will display
             events if the eventlog flag ("-e") was passed. mitmproxy sends
             output to the eventlog for display ("v" keyboard shortcut).
         """
         self._master.add_event(*args, **kwargs)
 
+    def duplicate_flow(self, f):
+        """
+            Returns a duplicate of the specified flow. The flow is also
+            injected into the current state, and is ready for editing, replay,
+            etc.
+        """
+        self._master.pause_scripts = True
+        f = self._master.duplicate_flow(f)
+        self._master.pause_scripts = False
+        return f
 
-class Headers:
+    def replay_request(self, f):
+        """
+            Replay the request on the current flow. The response will be added
+            to the flow object.
+        """
+        self._master.replay_request(f)
+
+
+class ODict:
+    """
+        A dictionary-like object for managing ordered (key, value) data.
+    """
     def __init__(self, lst=None):
-        if lst:
-            self.lst = lst
-        else:
-            self.lst = []
+        self.lst = lst or []
 
     def _kconv(self, s):
-        return s.lower()
+        return s
 
     def __eq__(self, other):
         return self.lst == other.lst
 
     def __getitem__(self, k):
+        """
+            Returns a list of values matching key.
+
+        """
         ret = []
         k = self._kconv(k)
         for i in self.lst:
@@ -58,14 +91,29 @@ class Headers:
                 new.append(i)
         return new
 
-    def __setitem__(self, k, hdrs):
+    def __len__(self):
+        """
+            Total number of (key, value) pairs.
+        """
+        return len(self.lst)
+
+    def __setitem__(self, k, valuelist):
+        """
+            Sets the values for key k. If there are existing values for this
+            key, they are cleared.
+        """
+        if isinstance(valuelist, basestring):
+            raise ValueError("ODict valuelist should be lists.")
         k = self._kconv(k)
         new = self._filter_lst(k, self.lst)
-        for i in hdrs:
+        for i in valuelist:
             new.append((k, i))
         self.lst = new
 
     def __delitem__(self, k):
+        """
+            Delete all items matching k.
+        """
         self.lst = self._filter_lst(k, self.lst)
 
     def __contains__(self, k):
@@ -89,22 +137,34 @@ class Headers:
             Returns a copy of this object.
         """
         lst = copy.deepcopy(self.lst)
-        return Headers(lst)
+        return self.__class__(lst)
 
     def __repr__(self):
-        """
-            Returns a string containing a formatted header string.
-        """
-        headerElements = []
+        elements = []
         for itm in self.lst:
-            headerElements.append(itm[0] + ": " + itm[1])
-        headerElements.append("")
-        return "\r\n".join(headerElements)
+            elements.append(itm[0] + ": " + itm[1])
+        elements.append("")
+        return "\r\n".join(elements)
+
+    def in_any(self, key, value, caseless=False):
+        """
+            Do any of the values matching key contain value?
+
+            If caseless is true, value comparison is case-insensitive.
+        """
+        if caseless:
+            value = value.lower()
+        for i in self[key]:
+            if caseless:
+                i = i.lower()
+            if value in i:
+                return True
+        return False
 
     def match_re(self, expr):
         """
-            Match the regular expression against each header. For each (key,
-            value) pair a string of the following format is matched against:
+            Match the regular expression against each (key, value) pair. For
+            each pair a string of the following format is matched against:
 
             "key: value"
         """
@@ -114,32 +174,9 @@ class Headers:
                 return True
         return False
 
-    def read(self, fp):
-        """
-            Read a set of headers from a file pointer. Stop once a blank line
-            is reached.
-        """
-        ret = []
-        name = ''
-        while 1:
-            line = fp.readline()
-            if not line or line == '\r\n' or line == '\n':
-                break
-            if line[0] in ' \t':
-                # continued header
-                ret[-1][1] = ret[-1][1] + '\r\n ' + line.strip()
-            else:
-                i = line.find(':')
-                # We're being liberal in what we accept, here.
-                if i > 0:
-                    name = line[:i]
-                    value = line[i+1:].strip()
-                    ret.append([name, value])
-        self.lst = ret
-
     def replace(self, pattern, repl, *args, **kwargs):
         """
-            Replaces a regular expression pattern with repl in both header keys
+            Replaces a regular expression pattern with repl in both keys
             and values. Returns the number of replacements made.
         """
         nlst, count = [], 0
@@ -151,6 +188,15 @@ class Headers:
             nlst.append([k, v])
         self.lst = nlst
         return count
+
+
+class ODictCaseless(ODict):
+    """
+        A variant of ODict with "caseless" keys. This version _preserves_ key
+        case, but does not consider case when setting or getting items.
+    """
+    def _kconv(self, s):
+        return s.lower()
 
 
 class HTTPMsg(controller.Msg):
@@ -184,20 +230,21 @@ class Request(HTTPMsg):
         An HTTP request.
 
         Exposes the following attributes:
-            
+
             client_conn: ClientConnection object, or None if this is a replay.
-            headers: Headers object
+            headers: ODictCaseless object
             content: Content of the request, or None
-            
+
             scheme: URL scheme (http/https)
             host: Host portion of the URL
             port: Destination port
             path: Path portion of the URL
 
             timestamp: Seconds since the epoch
-            method: HTTP method 
+            method: HTTP method
     """
     def __init__(self, client_conn, host, port, scheme, method, path, headers, content, timestamp=None):
+        assert isinstance(headers, ODictCaseless)
         self.client_conn = client_conn
         self.host, self.port, self.scheme = host, port, scheme
         self.method, self.path, self.headers, self.content = method, path, headers, content
@@ -234,9 +281,9 @@ class Request(HTTPMsg):
             decode appropriately.
         """
         if self.headers["accept-encoding"]:
-            self.headers["accept-encoding"] = [', '.join([
+            self.headers["accept-encoding"] = [', '.join(
                 e for e in encoding.ENCODINGS if e in self.headers["accept-encoding"][0]
-            ])]
+            )]
 
     def _set_replay(self):
         self.client_conn = None
@@ -263,8 +310,8 @@ class Request(HTTPMsg):
         self.scheme = state["scheme"]
         self.method = state["method"]
         self.path = state["path"]
-        self.headers = Headers._from_state(state["headers"])
-        self.content = base64.decodestring(state["content"])
+        self.headers = ODictCaseless._from_state(state["headers"])
+        self.content = state["content"]
         self.timestamp = state["timestamp"]
 
     def _get_state(self):
@@ -276,7 +323,7 @@ class Request(HTTPMsg):
             method = self.method,
             path = self.path,
             headers = self.headers._get_state(),
-            content = base64.encodestring(self.content),
+            content = self.content,
             timestamp = self.timestamp,
         )
 
@@ -289,8 +336,8 @@ class Request(HTTPMsg):
             str(state["scheme"]),
             str(state["method"]),
             str(state["path"]),
-            Headers._from_state(state["headers"]),
-            base64.decodestring(state["content"]),
+            ODictCaseless._from_state(state["headers"]),
+            state["content"],
             state["timestamp"]
         )
 
@@ -305,37 +352,64 @@ class Request(HTTPMsg):
             Returns a copy of this object.
         """
         c = copy.copy(self)
+        c.acked = True
         c.headers = self.headers.copy()
         return c
 
-    def _hostport(self):
-        if (self.port, self.scheme) in [(80, "http"), (443, "https")]:
-            host = self.host
-        else:
-            host = "%s:%s"%(self.host, self.port)
-        return host
+    def get_form_urlencoded(self):
+        """
+            Retrieves the URL-encoded form data, returning an ODict object.
+            Returns an empty ODict if there is no data or the content-type
+            indicates non-form data.
+        """
+        if self.headers.in_any("content-type", HDR_FORM_URLENCODED, True):
+            return ODict(utils.urldecode(self.content))
+        return ODict([])
+
+    def set_form_urlencoded(self, odict):
+        """
+            Sets the body to the URL-encoded form data, and adds the
+            appropriate content-type header. Note that this will destory the
+            existing body if there is one.
+        """
+        self.headers["Content-Type"] = [HDR_FORM_URLENCODED]
+        self.content = utils.urlencode(odict.lst)
+
+    def get_query(self):
+        """
+            Gets the request query string. Returns an ODict object.
+        """
+        _, _, _, _, query, _ = urlparse.urlparse(self.get_url())
+        if query:
+            return ODict(utils.urldecode(query))
+        return ODict([])
+
+    def set_query(self, odict):
+        """
+            Takes an ODict object, and sets the request query string.
+        """
+        scheme, netloc, path, params, _, fragment = urlparse.urlparse(self.get_url())
+        query = utils.urlencode(odict.lst)
+        self.set_url(urlparse.urlunparse([scheme, netloc, path, params, query, fragment]))
 
     def get_url(self):
         """
             Returns a URL string, constructed from the Request's URL compnents.
         """
-        return "%s://%s%s"%(self.scheme, self._hostport(), self.path)
+        return utils.unparse_url(self.scheme, self.host, self.port, self.path)
 
     def set_url(self, url):
         """
             Parses a URL specification, and updates the Request's information
             accordingly.
 
-            Returns False if the URL was invalid, True if the request succeeded. 
+            Returns False if the URL was invalid, True if the request succeeded.
         """
         parts = utils.parse_url(url)
         if not parts:
             return False
         self.scheme, self.host, self.port, self.path = parts
         return True
-
-    def _is_response(self):
-        return False
 
     def _assemble(self, _proxy = False):
         """
@@ -357,12 +431,12 @@ class Request(HTTPMsg):
             ]
         )
         if not 'host' in headers:
-            headers["host"] = [self._hostport()]
+            headers["host"] = [utils.hostport(self.scheme, self.host, self.port)]
         content = self.content
-        if content is not None:
-            headers["content-length"] = [str(len(content))]
-        else:
+        if content is None:
             content = ""
+        else:
+            headers["content-length"] = [str(len(content))]
         if self.close:
             headers["connection"] = ["close"]
         if not _proxy:
@@ -392,11 +466,12 @@ class Response(HTTPMsg):
             request: Request object.
             code: HTTP response code
             msg: HTTP response message
-            headers: Headers object
+            headers: ODict object
             content: Response content
             timestamp: Seconds since the epoch
     """
     def __init__(self, request, code, msg, headers, content, timestamp=None):
+        assert isinstance(headers, ODictCaseless)
         self.request = request
         self.code, self.msg = code, msg
         self.headers, self.content = headers, content
@@ -466,8 +541,8 @@ class Response(HTTPMsg):
     def _load_state(self, state):
         self.code = state["code"]
         self.msg = state["msg"]
-        self.headers = Headers._from_state(state["headers"])
-        self.content = base64.decodestring(state["content"])
+        self.headers = ODictCaseless._from_state(state["headers"])
+        self.content = state["content"]
         self.timestamp = state["timestamp"]
 
     def _get_state(self):
@@ -476,7 +551,7 @@ class Response(HTTPMsg):
             msg = self.msg,
             headers = self.headers._get_state(),
             timestamp = self.timestamp,
-            content = base64.encodestring(self.content)
+            content = self.content
         )
 
     @classmethod
@@ -485,8 +560,8 @@ class Response(HTTPMsg):
             request,
             state["code"],
             str(state["msg"]),
-            Headers._from_state(state["headers"]),
-            base64.decodestring(state["content"]),
+            ODictCaseless._from_state(state["headers"]),
+            state["content"],
             state["timestamp"],
         )
 
@@ -498,11 +573,9 @@ class Response(HTTPMsg):
             Returns a copy of this object.
         """
         c = copy.copy(self)
+        c.acked = True
         c.headers = self.headers.copy()
         return c
-
-    def _is_response(self):
-        return True
 
     def _assemble(self):
         """
@@ -516,10 +589,10 @@ class Response(HTTPMsg):
             ['proxy-connection', 'connection', 'keep-alive', 'transfer-encoding']
         )
         content = self.content
-        if content is not None:
-            headers["content-length"] = [str(len(content))]
-        else:
+        if content is None:
             content = ""
+        else:
+            headers["content-length"] = [str(len(content))]
         if self.request.client_conn.close:
             headers["connection"] = ["close"]
         proto = "HTTP/1.1 %s %s"%(self.code, str(self.msg))
@@ -539,7 +612,7 @@ class Response(HTTPMsg):
 
 class ClientDisconnect(controller.Msg):
     """
-        A client disconnection event. 
+        A client disconnection event.
 
         Exposes the following attributes:
 
@@ -556,7 +629,7 @@ class ClientConnect(controller.Msg):
         Requests.
 
         Exposes the following attributes:
-            
+
             address: (address, port) tuple, or None if the connection is replayed.
             requestcount: Number of requests created by this client connection.
             close: Is the client connection closed?
@@ -593,12 +666,14 @@ class ClientConnect(controller.Msg):
         """
             Returns a copy of this object.
         """
-        return copy.copy(self)
+        c = copy.copy(self)
+        c.acked = True
+        return c
 
 
 class Error(controller.Msg):
     """
-        An Error. 
+        An Error.
 
         This is distinct from an HTTP error response (say, a code 500), which
         is represented by a normal Response object. This class is responsible
@@ -624,7 +699,9 @@ class Error(controller.Msg):
         """
             Returns a copy of this object.
         """
-        return copy.copy(self)
+        c = copy.copy(self)
+        c.acked = True
+        return c
 
     def _get_state(self):
         return dict(
@@ -633,9 +710,9 @@ class Error(controller.Msg):
         )
 
     @classmethod
-    def _from_state(klass, state):
+    def _from_state(klass, request, state):
         return klass(
-            None,
+            request,
             state["msg"],
             state["timestamp"],
         )
@@ -704,7 +781,7 @@ class ServerPlaybackState:
                 l.append(i)
 
     def count(self):
-        return sum([len(i) for i in self.fmap.values()])
+        return sum(len(i) for i in self.fmap.values())
 
     def _hash(self, flow):
         """
@@ -759,6 +836,13 @@ class StickyCookieState:
             m["path"] or "/"
         )
 
+    def domain_match(self, a, b):
+        if cookielib.domain_match(a, b):
+            return True
+        elif cookielib.domain_match(a, b.strip(".")):
+            return True
+        return False
+
     def handle_response(self, f):
         for i in f.response.headers["set-cookie"]:
             # FIXME: We now know that Cookie.py screws up some cookies with
@@ -766,22 +850,23 @@ class StickyCookieState:
             c = Cookie.SimpleCookie(str(i))
             m = c.values()[0]
             k = self.ckey(m, f)
-            if cookielib.domain_match(f.request.host, k[0]):
+            if self.domain_match(f.request.host, k[0]):
                 self.jar[self.ckey(m, f)] = m
 
     def handle_request(self, f):
+        l = []
         if f.match(self.flt):
             for i in self.jar.keys():
                 match = [
-                    cookielib.domain_match(i[0], f.request.host),
+                    self.domain_match(f.request.host, i[0]),
                     f.request.port == i[1],
                     f.request.path.startswith(i[2])
                 ]
                 if all(match):
-                    l = f.request.headers["cookie"]
-                    f.request.stickycookie = True
                     l.append(self.jar[i].output(header="").strip())
-                    f.request.headers["cookie"] = l
+        if l:
+            f.request.stickycookie = True
+            f.request.headers["cookie"] = l
 
 
 class StickyAuthState:
@@ -804,7 +889,7 @@ class Flow:
     """
         A Flow is a collection of objects representing a single HTTP
         transaction. The main attributes are:
-            
+
             request: Request object
             response: Response object
             error: Error object
@@ -822,6 +907,17 @@ class Flow:
         self.response, self.error = None, None
         self.intercepting = False
         self._backup = None
+
+    def copy(self):
+        rc = self.request.copy()
+        f = Flow(rc)
+        if self.response:
+            f.response = self.response.copy()
+            f.response.request = rc
+        if self.error:
+            f.error = self.error.copy()
+            f.error.request = rc
+        return f
 
     @classmethod
     def _from_state(klass, state):
@@ -861,7 +957,7 @@ class Flow:
             if self.error:
                 self.error._load_state(state["error"])
             else:
-                self.error = Error._from_state(state["error"])
+                self.error = Error._from_state(self.request, state["error"])
         else:
             self.error = None
 
@@ -897,12 +993,8 @@ class Flow:
             if matched, False if not.
         """
         if f:
-            if self.response:
-                return f(self.response)
-            elif self.request:
-                return f(self.request)
-        else:
-            return True
+            return f(self)
+        return True
 
     def kill(self, master):
         """
@@ -965,6 +1057,9 @@ class State(object):
     def flow_count(self):
         return len(self._flow_map)
 
+    def index(self, f):
+        return self._flow_list.index(f)
+
     def active_flow_count(self):
         c = 0
         for i in self._flow_list:
@@ -979,6 +1074,7 @@ class State(object):
         f = Flow(req)
         self._flow_list.append(f)
         self._flow_map[req] = f
+        assert len(self._flow_list) == len(self._flow_map)
         if f.match(self._limit):
             self.view.append(f)
         return f
@@ -1000,11 +1096,8 @@ class State(object):
             Add an error response to the state. Returns the matching flow, or
             None if there isn't one.
         """
-        if err.request:
-            f = self._flow_map.get(err.request)
-            if not f:
-                return None
-        else:
+        f = self._flow_map.get(err.request)
+        if not f:
             return None
         f.error = err
         if f.match(self._limit) and not f in self.view:
@@ -1078,6 +1171,7 @@ class FlowMaster(controller.Master):
         self.client_playback = None
         self.kill_nonreplay = False
         self.script = None
+        self.pause_scripts = False
 
         self.stickycookie_state = False
         self.stickycookie_txt = None
@@ -1203,17 +1297,27 @@ class FlowMaster(controller.Master):
 
         return controller.Master.tick(self, q)
 
+    def duplicate_flow(self, f):
+        return self.load_flow(f.copy())
+
+    def load_flow(self, f):
+        """
+            Loads a flow, and returns a new flow object.
+        """
+        if f.request:
+            fr = self.handle_request(f.request)
+        if f.response:
+            self.handle_response(f.response)
+        if f.error:
+            self.handle_error(f.error)
+        return fr
+
     def load_flows(self, fr):
         """
             Load flows from a FlowReader object.
         """
         for i in fr.stream():
-            if i.request:
-                self.handle_request(i.request)
-            if i.response:
-                self.handle_response(i.response)
-            if i.error:
-                self.handle_error(i.error)
+            self.load_flow(i)
 
     def process_new_request(self, f):
         if self.stickycookie_state:
@@ -1252,12 +1356,16 @@ class FlowMaster(controller.Master):
             f.response = None
             f.error = None
             self.process_new_request(f)
-            rt = proxy.RequestReplayThread(f, self.masterq)
+            rt = proxy.RequestReplayThread(
+                    self.server.config,
+                    f,
+                    self.masterq,
+                )
             rt.start()
         #end nocover
 
     def run_script_hook(self, name, *args, **kwargs):
-        if self.script:
+        if self.script and not self.pause_scripts:
             ret = self.script.run(name, *args, **kwargs)
             if not ret[0] and ret[1]:
                 e = "Script error:\n" + ret[1][1]
@@ -1304,7 +1412,8 @@ class FlowMaster(controller.Master):
             self.client_playback.clear(f)
         if not f:
             r._ack()
-        self.process_new_response(f)
+        if f:
+            self.process_new_response(f)
         return f
 
     def shutdown(self):
@@ -1316,12 +1425,10 @@ class FlowMaster(controller.Master):
 class FlowWriter:
     def __init__(self, fo):
         self.fo = fo
-        self.ns = netstring.FileEncoder(fo)
 
     def add(self, flow):
         d = flow._get_state()
-        s = json.dumps(d)
-        self.ns.write(s)
+        tnetstring.dump(d, self.fo)
 
 
 class FlowReadError(Exception):
@@ -1333,16 +1440,20 @@ class FlowReadError(Exception):
 class FlowReader:
     def __init__(self, fo):
         self.fo = fo
-        self.ns = netstring.decode_file(fo)
 
     def stream(self):
         """
             Yields Flow objects from the dump.
         """
+        off = 0
         try:
-            for i in self.ns:
-                data = json.loads(i)
+            while 1:
+                data = tnetstring.load(self.fo)
+                off = self.fo.tell()
                 yield Flow._from_state(data)
-        except netstring.DecoderError:
+        except ValueError:
+            # Error is due to EOF
+            if self.fo.tell() == off and self.fo.read() == '':
+                return
             raise FlowReadError("Invalid data format.")
 

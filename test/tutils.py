@@ -1,13 +1,13 @@
-import os.path, threading, Queue
+import threading, Queue
 import libpry
-from libmproxy import proxy, filt, flow, controller
+from libmproxy import proxy, flow, controller
 import serv, sslserv
 import random
 
 def treq(conn=None):
     if not conn:
         conn = flow.ClientConnect(("address", 22))
-    headers = flow.Headers()
+    headers = flow.ODictCaseless()
     headers["header"] = ["qvalue"]
     return flow.Request(conn, "host", 80, "http", "GET", "/path", headers, "content")
 
@@ -15,7 +15,7 @@ def treq(conn=None):
 def tresp(req=None):
     if not req:
         req = treq()
-    headers = flow.Headers()
+    headers = flow.ODictCaseless()
     headers["header_response"] = ["svalue"]
     return flow.Response(req, 200, "message", headers, "content_response")
 
@@ -50,8 +50,8 @@ HTTPS_PORT = random.randint(30000, 40000)
 
 class TestMaster(controller.Master):
     def __init__(self, port, testq):
-        serv = proxy.ProxyServer(proxy.SSLConfig("data/testkey.pem"), port)
-        controller.Master.__init__(self, serv)
+        s = proxy.ProxyServer(proxy.ProxyConfig("data/testkey.pem"), port)
+        controller.Master.__init__(self, s)
         self.testq = testq
         self.log = []
 

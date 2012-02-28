@@ -1,11 +1,24 @@
+# Copyright (C) 2012  Aldo Cortesi
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 """
     A simple proxy server implementation, which always reads all of a server
     response into memory, performs some transformation, and then writes it back
     to the client.
-
-    Development started from Neil Schemenauer's munchy.py
 """
-import sys, os, string, socket, select, time
+import sys, os, string, socket, time
 import shutil, tempfile, threading
 import optparse, SocketServer, ssl
 import utils, flow
@@ -21,28 +34,65 @@ class ProxyError(Exception):
         return "ProxyError(%s, %s)"%(self.code, self.msg)
 
 
-class SSLConfig:
-    def __init__(self, certfile = None, ciphers = None, cacert = None, cert_wait_time=None):
+class ProxyConfig:
+    def __init__(self, certfile = None, ciphers = None, cacert = None, cert_wait_time=0, body_size_limit = None, reverse_proxy=None):
         self.certfile = certfile
         self.ciphers = ciphers
         self.cacert = cacert
         self.certdir = None
         self.cert_wait_time = cert_wait_time
+        self.body_size_limit = body_size_limit
+        self.reverse_proxy = reverse_proxy
 
 
-def read_chunked(fp):
-    content = ""
+def read_headers(fp):
+    """
+        Read a set of headers from a file pointer. Stop once a blank line
+        is reached. Return a ODict object.
+    """
+    ret = []
+    name = ''
     while 1:
         line = fp.readline()
+        if not line or line == '\r\n' or line == '\n':
+            break
+        if line[0] in ' \t':
+            # continued header
+            ret[-1][1] = ret[-1][1] + '\r\n ' + line.strip()
+        else:
+            i = line.find(':')
+            # We're being liberal in what we accept, here.
+            if i > 0:
+                name = line[:i]
+                value = line[i+1:].strip()
+                ret.append([name, value])
+    return flow.ODictCaseless(ret)
+
+
+def read_chunked(fp, limit):
+    content = ""
+    total = 0
+    while 1:
+        line = fp.readline(128)
         if line == "":
             raise IOError("Connection closed")
         if line == '\r\n' or line == '\n':
             continue
-        length = int(line,16)
+        try:
+            length = int(line,16)
+        except ValueError:
+            # FIXME: Not strictly correct - this could be from the server, in which
+            # case we should send a 502.
+            raise ProxyError(400, "Invalid chunked encoding length: %s"%line)
         if not length:
             break
+        total += length
+        if limit is not None and total > limit:
+            msg = "HTTP Body too large."\
+                  " Limit is %s, chunked content length was at least %s"%(limit, total)
+            raise ProxyError(509, msg)
         content += fp.read(length)
-        line = fp.readline()
+        line = fp.readline(5)
         if line != '\r\n':
             raise IOError("Malformed chunked body")
     while 1:
@@ -54,15 +104,23 @@ def read_chunked(fp):
     return content
 
 
-def read_http_body(rfile, connection, headers, all):
+def read_http_body(rfile, connection, headers, all, limit):
     if 'transfer-encoding' in headers:
         if not ",".join(headers["transfer-encoding"]) == "chunked":
             raise IOError('Invalid transfer-encoding')
-        content = read_chunked(rfile)
+        content = read_chunked(rfile, limit)
     elif "content-length" in headers:
-        content = rfile.read(int(headers["content-length"][0]))
+        try:
+            l = int(headers["content-length"][0])
+        except ValueError:
+            # FIXME: Not strictly correct - this could be from the server, in which
+            # case we should send a 502.
+            raise ProxyError(400, "Invalid content-length header: %s"%headers["content-length"])
+        if limit is not None and l > limit:
+            raise ProxyError(509, "HTTP Body too large. Limit is %s, content-length was %s"%(limit, l))
+        content = rfile.read(l)
     elif all:
-        content = rfile.read()
+        content = rfile.read(limit if limit else None)
         connection.close = True
     else:
         content = ""
@@ -102,7 +160,6 @@ def parse_request_line(request):
     if major != 1:
         raise ProxyError(400, "Unsupported protocol")
     return method, scheme, host, port, path, minor
-    
 
 
 class FileLike:
@@ -142,14 +199,14 @@ class FileLike:
 
 #begin nocover
 class RequestReplayThread(threading.Thread):
-    def __init__(self, flow, masterq):
-        self.flow, self.masterq = flow, masterq
+    def __init__(self, config, flow, masterq):
+        self.config, self.flow, self.masterq = config, flow, masterq
         threading.Thread.__init__(self)
 
     def run(self):
         try:
-            server = ServerConnection(self.flow.request)
-            server.send_request(self.flow.request)
+            server = ServerConnection(self.config, self.flow.request)
+            server.send()
             response = server.read_response()
             response._send(self.masterq)
         except ProxyError, v:
@@ -158,10 +215,14 @@ class RequestReplayThread(threading.Thread):
 
 
 class ServerConnection:
-    def __init__(self, request):
-        self.host = request.host
-        self.port = request.port
-        self.scheme = request.scheme
+    def __init__(self, config, request):
+        self.config, self.request = config, request
+        if config.reverse_proxy:
+            self.scheme, self.host, self.port = config.reverse_proxy
+        else:
+            self.host = request.host
+            self.port = request.port
+            self.scheme = request.scheme
         self.close = False
         self.server, self.rfile, self.wfile = None, None, None
         self.connect()
@@ -174,18 +235,17 @@ class ServerConnection:
                 server = ssl.wrap_socket(server)
             server.connect((addr, self.port))
         except socket.error, err:
-            raise ProxyError(504, 'Error connecting to "%s": %s' % (self.host, err))
+            raise ProxyError(502, 'Error connecting to "%s": %s' % (self.host, err))
         self.server = server
         self.rfile, self.wfile = server.makefile('rb'), server.makefile('wb')
 
-    def send_request(self, request):
-        self.request = request
-        request.close = self.close
+    def send(self):
+        self.request.close = self.close
         try:
-            self.wfile.write(request._assemble())
+            self.wfile.write(self.request._assemble())
             self.wfile.flush()
         except socket.error, err:
-            raise ProxyError(504, 'Error sending data to "%s": %s' % (request.host, err))
+            raise ProxyError(502, 'Error sending data to "%s": %s' % (self.request.host, err))
 
     def read_response(self):
         line = self.rfile.readline()
@@ -194,18 +254,22 @@ class ServerConnection:
         if not line:
             raise ProxyError(502, "Blank server response.")
         parts = line.strip().split(" ", 2)
+        if len(parts) == 2: # handle missing message gracefully
+            parts.append("")
         if not len(parts) == 3:
             raise ProxyError(502, "Invalid server response: %s."%line)
         proto, code, msg = parts
-        code = int(code)
-        headers = flow.Headers()
-        headers.read(self.rfile)
+        try:
+            code = int(code)
+        except ValueError:
+            raise ProxyError(502, "Invalid server response: %s."%line)
+        headers = read_headers(self.rfile)
         if code >= 100 and code <= 199:
             return self.read_response()
         if self.request.method == "HEAD" or code == 204 or code == 304:
             content = ""
         else:
-            content = read_http_body(self.rfile, self, headers, True)
+            content = read_http_body(self.rfile, self, headers, True, self.config.body_size_limit)
         return flow.Response(self.request, code, msg, headers, content)
 
     def terminate(self):
@@ -248,13 +312,13 @@ class ProxyHandler(SocketServer.StreamRequestHandler):
                 cc.close = True
                 return
 
-            if request._is_response():
+            if isinstance(request, flow.Response):
                 response = request
                 request = False
                 response = response._send(self.mqueue)
             else:
-                server = ServerConnection(request)
-                server.send_request(request)
+                server = ServerConnection(self.config, request)
+                server.send()
                 try:
                     response = server.read_response()
                 except IOError, v:
@@ -286,7 +350,7 @@ class ProxyHandler(SocketServer.StreamRequestHandler):
             ret = utils.dummy_cert(self.config.certdir, self.config.cacert, host)
             time.sleep(self.config.cert_wait_time)
             if not ret:
-                raise ProxyError(400, "mitmproxy: Unable to generate dummy cert.")
+                raise ProxyError(502, "mitmproxy: Unable to generate dummy cert.")
             return ret
 
     def read_request(self, client_conn):
@@ -324,8 +388,7 @@ class ProxyHandler(SocketServer.StreamRequestHandler):
             method, scheme, host, port, path, httpminor = parse_request_line(self.rfile.readline())
         if scheme is None:
             scheme = "https"
-        headers = flow.Headers()
-        headers.read(self.rfile)
+        headers = read_headers(self.rfile)
         if host is None and "host" in headers:
             netloc = headers["host"][0]
             if ':' in netloc:
@@ -339,9 +402,12 @@ class ProxyHandler(SocketServer.StreamRequestHandler):
                     port = 80
             port = int(port)
         if host is None:
-            # FIXME: We only specify the first part of the invalid request in this error.
-            # We should gather up everything read from the socket, and specify it all.
-            raise ProxyError(400, 'Invalid request: %s'%line)
+            if self.config.reverse_proxy:
+                scheme, host, port = self.config.reverse_proxy
+            else:
+                # FIXME: We only specify the first part of the invalid request in this error.
+                # We should gather up everything read from the socket, and specify it all.
+                raise ProxyError(400, 'Invalid request: %s'%line)
         if "expect" in headers:
             expect = ",".join(headers['expect'])
             if expect == "100-continue" and httpminor >= 1:
@@ -360,7 +426,7 @@ class ProxyHandler(SocketServer.StreamRequestHandler):
                     client_conn.close = True
                 if value == "keep-alive":
                     client_conn.close = False
-        content = read_http_body(self.rfile, client_conn, headers, False)
+        content = read_http_body(self.rfile, client_conn, headers, False, self.config.body_size_limit)
         return flow.Request(client_conn, host, port, scheme, method, path, headers, content)
 
     def send_response(self, response):
@@ -422,8 +488,11 @@ class ProxyServer(ServerBase):
         self.RequestHandlerClass(self.config, request, client_address, self, self.masterq)
 
     def shutdown(self):
-        shutil.rmtree(self.certdir)
         ServerBase.shutdown(self)
+        try:
+            shutil.rmtree(self.certdir)
+        except OSError:
+            pass
 
 
 # Command-line utils
@@ -442,7 +511,7 @@ def certificate_option_group(parser):
     parser.add_option_group(group)
 
 
-def process_certificate_option_group(parser, options):
+def process_proxy_options(parser, options):
     if options.cert:
         options.cert = os.path.expanduser(options.cert)
         if not os.path.exists(options.cert):
@@ -454,9 +523,20 @@ def process_certificate_option_group(parser, options):
         utils.dummy_ca(cacert)
     if getattr(options, "cache", None) is not None:
         options.cache = os.path.expanduser(options.cache)
-    return SSLConfig(
+    body_size_limit = utils.parse_size(options.body_size_limit)
+
+    if options.reverse_proxy:
+        rp = utils.parse_proxy_spec(options.reverse_proxy)
+        if not rp:
+            parser.error("Invalid reverse proxy specification: %s"%options.reverse_proxy)
+    else:
+        rp = None
+
+    return ProxyConfig(
         certfile = options.cert,
         cacert = cacert,
         ciphers = options.ciphers,
-        cert_wait_time = options.cert_wait_time
+        cert_wait_time = options.cert_wait_time,
+        body_size_limit = body_size_limit,
+        reverse_proxy = rp
     )

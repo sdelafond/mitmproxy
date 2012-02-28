@@ -1,4 +1,4 @@
-import textwrap, cStringIO, os, time, re, json
+import textwrap, os, re, json
 import libpry
 from libmproxy import utils
 
@@ -29,11 +29,19 @@ class uhexdump(libpry.AutoTree):
     def test_simple(self):
         assert utils.hexdump("one\0"*10)
 
+
 class udel_all(libpry.AutoTree):
     def test_simple(self):
         d = dict(a=1, b=2, c=3)
         utils.del_all(d, ["a", "x", "b"])
         assert d.keys() == ["c"]
+
+
+class uclean_hanging_newline(libpry.AutoTree):
+    def test_simple(self):
+        s = "foo\n"
+        assert utils.clean_hanging_newline(s) == "foo"
+        assert utils.clean_hanging_newline("foo") == "foo"
 
 
 class upretty_size(libpry.AutoTree):
@@ -138,12 +146,12 @@ class udummy_cert(libpry.AutoTree):
         d = self.tmpdir()
         cacert = os.path.join(d, "foo/cert.cnf")
         assert utils.dummy_ca(cacert)
-        assert utils.dummy_cert(
+        p = utils.dummy_cert(
             os.path.join(d, "foo"),
             cacert,
             "foo.com"
         )
-        assert os.path.exists(os.path.join(d, "foo", "foo.com.pem"))
+        assert os.path.exists(p)
         # Short-circuit
         assert utils.dummy_cert(
             os.path.join(d, "foo"),
@@ -153,12 +161,12 @@ class udummy_cert(libpry.AutoTree):
 
     def test_no_ca(self):
         d = self.tmpdir()
-        assert utils.dummy_cert(
+        p = utils.dummy_cert(
             d,
             None,
             "foo.com"
         )
-        assert os.path.exists(os.path.join(d, "foo.com.pem"))
+        assert os.path.exists(p)
 
 
 class uLRUCache(libpry.AutoTree):
@@ -192,6 +200,22 @@ class uLRUCache(libpry.AutoTree):
         assert len(f._cachelist_one) == 2
 
 
+class u_parse_proxy_spec(libpry.AutoTree):
+    def test_simple(self):
+        assert not utils.parse_proxy_spec("")
+        assert utils.parse_proxy_spec("http://foo.com:88") == ("http", "foo.com", 88)
+        assert utils.parse_proxy_spec("http://foo.com") == ("http", "foo.com", 80)
+        assert not utils.parse_proxy_spec("foo.com")
+        assert not utils.parse_proxy_spec("http://")
+
+
+class u_unparse_url(libpry.AutoTree):
+    def test_simple(self):
+        assert utils.unparse_url("http", "foo.com", 99, "") == "http://foo.com:99"
+        assert utils.unparse_url("http", "foo.com", 80, "") == "http://foo.com"
+        assert utils.unparse_url("https", "foo.com", 80, "") == "https://foo.com:80"
+        assert utils.unparse_url("https", "foo.com", 443, "") == "https://foo.com"
+
 
 class u_parse_url(libpry.AutoTree):
     def test_simple(self):
@@ -216,6 +240,21 @@ class u_parse_url(libpry.AutoTree):
         s, h, po, pa = utils.parse_url("https://foo")
         assert po == 443
 
+        assert not utils.parse_url("https://foo:bar")
+        assert not utils.parse_url("https://foo:")
+
+
+class u_parse_size(libpry.AutoTree):
+    def test_simple(self):
+        assert not utils.parse_size("")
+        assert utils.parse_size("1") == 1
+        assert utils.parse_size("1k") == 1024
+        assert utils.parse_size("1m") == 1024**2
+        assert utils.parse_size("1g") == 1024**3
+        libpry.raises(ValueError, utils.parse_size, "1f")
+        libpry.raises(ValueError, utils.parse_size, "ak")
+
+
 tests = [
     uformat_timestamp(),
     uisBin(),
@@ -230,5 +269,9 @@ tests = [
     udummy_ca(),
     udummy_cert(),
     uLRUCache(),
-    u_parse_url()
+    u_parse_url(),
+    u_parse_proxy_spec(),
+    u_unparse_url(),
+    u_parse_size(),
+    uclean_hanging_newline()
 ]

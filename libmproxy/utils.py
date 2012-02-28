@@ -12,8 +12,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import re, os, subprocess, datetime, urlparse, string
-import time, functools, cgi, textwrap
+import re, os, subprocess, datetime, urlparse, string, urllib
+import time, functools, cgi, textwrap, hashlib
 import json
 
 CERT_SLEEP_TIME = 1
@@ -123,7 +123,17 @@ def pretty_json(s):
 
 
 def urldecode(s):
+    """
+        Takes a urlencoded string and returns a list of (key, value) tuples.
+    """
     return cgi.parse_qsl(s)
+
+
+def urlencode(s):
+    """
+        Takes a list of (key, value) tuples and returns a urlencoded string.
+    """
+    return urllib.urlencode(s, False)
 
 
 def hexdump(s):
@@ -135,10 +145,10 @@ def hexdump(s):
     for i in range(0, len(s), 16):
         o = "%.10x"%i
         part = s[i:i+16]
-        x = " ".join(["%.2x"%ord(i) for i in part])
+        x = " ".join("%.2x"%ord(i) for i in part)
         if len(part) < 16:
             x += " "
-            x += " ".join(["  " for i in range(16-len(part))])
+            x += " ".join("  " for i in range(16 - len(part)))
         parts.append(
             (o, x, cleanBin(part))
         )
@@ -149,7 +159,6 @@ def del_all(dict, keys):
     for key in keys:
         if key in dict:
             del dict[key]
-
 
 
 def pretty_size(size):
@@ -275,12 +284,13 @@ def dummy_cert(certdir, ca, commonname):
 
         Returns cert path if operation succeeded, None if not.
     """
-    certpath = os.path.join(certdir, commonname + ".pem")
+    namehash = hashlib.sha256(commonname).hexdigest()
+    certpath = os.path.join(certdir, namehash + ".pem")
     if os.path.exists(certpath):
         return certpath
 
-    confpath = os.path.join(certdir, commonname + ".cnf")
-    reqpath = os.path.join(certdir, commonname + ".req")
+    confpath = os.path.join(certdir, namehash + ".cnf")
+    reqpath = os.path.join(certdir, namehash + ".req")
 
     template = open(pkg_data.path("resources/cert.cnf")).read()
     f = open(confpath, "w")
@@ -393,8 +403,11 @@ def parse_url(url):
     if not scheme:
         return None
     if ':' in netloc:
-        host, port = string.split(netloc, ':')
-        port = int(port)
+        host, port = string.rsplit(netloc, ':', maxsplit=1)
+        try:
+            port = int(port)
+        except ValueError:
+            return None
     else:
         host = netloc
         if scheme == "https":
@@ -407,3 +420,66 @@ def parse_url(url):
     return scheme, host, port, path
 
 
+def parse_proxy_spec(url):
+    p = parse_url(url)
+    if not p or not p[1]:
+        return None
+    return p[:3]
+
+
+def hostport(scheme, host, port):
+    """
+        Returns the host component, with a port specifcation if needed.
+    """
+    if (port, scheme) in [(80, "http"), (443, "https")]:
+        return host
+    else:
+        return "%s:%s"%(host, port)
+
+
+def unparse_url(scheme, host, port, path=""):
+    """
+        Returns a URL string, constructed from the specified compnents.
+    """
+    return "%s://%s%s"%(scheme, hostport(scheme, host, port), path)
+
+
+def clean_hanging_newline(t):
+    """
+        Many editors will silently add a newline to the final line of a
+        document (I'm looking at you, Vim). This function fixes this common
+        problem at the risk of removing a hanging newline in the rare cases
+        where the user actually intends it.
+    """
+    if t[-1] == "\n":
+        return t[:-1]
+    return t
+
+
+def parse_size(s):
+    """
+        Parses a size specification. Valid specifications are:
+
+            123: bytes
+            123k: kilobytes
+            123m: megabytes
+            123g: gigabytes
+    """
+    if not s:
+        return None
+    mult = None
+    if s[-1].lower() == "k":
+        mult = 1024**1
+    elif s[-1].lower() == "m":
+        mult = 1024**2
+    elif s[-1].lower() == "g":
+        mult = 1024**3
+
+    if mult:
+        s = s[:-1]
+    else:
+        mult = 1
+    try:
+        return int(s) * mult
+    except ValueError:
+        raise ValueError("Invalid size specification: %s"%s)

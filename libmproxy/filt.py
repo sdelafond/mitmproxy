@@ -1,16 +1,15 @@
-
 # Copyright (C) 2010  Aldo Cortesi
-# 
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -19,7 +18,7 @@
 
         ~q          Request
         ~s          Response
-    
+
     Headers:
 
         Patterns are matched against "name: value" strings. Field names are
@@ -34,12 +33,14 @@
         ~bq rex     Expression in the body of response
         ~t rex      Shortcut for content-type header.
 
+        ~m rex      Method
         ~u rex      URL
         ~c CODE     Response code.
-        rex         Equivalent to ~u rex 
+        rex         Equivalent to ~u rex
 """
 import re, sys
 import contrib.pyparsing as pp
+import flow
 
 
 class _Token:
@@ -56,19 +57,27 @@ class _Action(_Token):
         return klass(*toks[1:])
 
 
+class FErr(_Action):
+    code = "e"
+    help = "Match error"
+    def __call__(self, f):
+        return True if f.error else False
+
+
 class FReq(_Action):
     code = "q"
-    help = "Match request"
-    def __call__(self, conn):
-        return not conn._is_response()
+    help = "Match request with no response"
+    def __call__(self, f):
+        if not f.response:
+            return True
 
 
 class FResp(_Action):
     code = "s"
     help = "Match response"
-    def __call__(self, conn):
-        return conn._is_response()
-    
+    def __call__(self, f):
+        return True if f.response else False
+
 
 class _Rex(_Action):
     def __init__(self, expr):
@@ -83,77 +92,69 @@ def _check_content_type(expr, o):
     if val and re.search(expr, val[0]):
         return True
     return False
-    
+
 
 class FContentType(_Rex):
     code = "t"
     help = "Content-type header"
-    def __call__(self, o):
-        if _check_content_type(self.expr, o):
+    def __call__(self, f):
+        if _check_content_type(self.expr, f.request):
             return True
-        elif o._is_response() and _check_content_type(self.expr, o.request):
+        elif f.response and _check_content_type(self.expr, f.response):
             return True
-        else:
-            return False
+        return False
 
 
 class FRequestContentType(_Rex):
     code = "tq"
     help = "Request Content-Type header"
-    def __call__(self, o):
-        if o._is_response():
-            return _check_content_type(self.expr, o.request)
-        else:
-            return _check_content_type(self.expr, o)
+    def __call__(self, f):
+        return _check_content_type(self.expr, f.request)
 
 
 class FResponseContentType(_Rex):
     code = "ts"
     help = "Request Content-Type header"
-    def __call__(self, o):
-        if o._is_response():
-            return _check_content_type(self.expr, o)
-        else:
-            return False
+    def __call__(self, f):
+        if f.response:
+            return _check_content_type(self.expr, f.response)
+        return False
 
 
 class FHead(_Rex):
     code = "h"
     help = "Header"
-    def __call__(self, o):
-        val = o.headers.match_re(self.expr)
-        if not val and o._is_response():
-            val = o.request.headers.match_re(self.expr)
-        return val
-    
+    def __call__(self, f):
+        if f.request.headers.match_re(self.expr):
+            return True
+        elif f.response and f.response.headers.match_re(self.expr):
+            return True
+        return False
+
 
 class FHeadRequest(_Rex):
     code = "hq"
     help = "Request header"
-    def __call__(self, o):
-        if o._is_response():
-            h = o.request.headers
-        else:
-            h = o.headers
-        return h.match_re(self.expr)
+    def __call__(self, f):
+        if f.request.headers.match_re(self.expr):
+            return True
 
 
 class FHeadResponse(_Rex):
     code = "hs"
     help = "Response header"
-    def __call__(self, o):
-        if not o._is_response():
-            return False
-        return o.headers.match_re(self.expr)
+    def __call__(self, f):
+        if f.response and f.response.headers.match_re(self.expr):
+            return True
 
 
 class FBod(_Rex):
     code = "b"
     help = "Body"
-    def __call__(self, o):
-        if o.content and re.search(self.expr, o.content):
+    def __call__(self, f):
+        if f.request.content and re.search(self.expr, f.request.content):
             return True
-        elif o._is_response() and o.request.content and re.search(self.expr, o.request.content):
+        elif f.response and f.response.content and re.search(self.expr, f.response.content):
             return True
         return False
 
@@ -161,24 +162,25 @@ class FBod(_Rex):
 class FBodRequest(_Rex):
     code = "bq"
     help = "Request body"
-    def __call__(self, o):
-        if o._is_response() and o.request.content and re.search(self.expr, o.request.content):
+    def __call__(self, f):
+        if f.request.content and re.search(self.expr, f.request.content):
             return True
-        elif not o._is_response() and o.content and re.search(self.expr, o.content):
-            return True
-        return False
 
 
 class FBodResponse(_Rex):
     code = "bs"
     help = "Response body"
-    def __call__(self, o):
-        if not o._is_response():
-            return False
-        elif o.content and re.search(self.expr, o.content):
+    def __call__(self, f):
+        if f.response and f.response.content and re.search(self.expr, f.response.content):
             return True
-        return False
-        
+
+
+class FMethod(_Rex):
+    code = "m"
+    help = "Method"
+    def __call__(self, f):
+        return bool(re.search(self.expr, f.request.method, re.IGNORECASE))
+
 
 class FUrl(_Rex):
     code = "u"
@@ -190,12 +192,8 @@ class FUrl(_Rex):
             toks = toks[1:]
         return klass(*toks)
 
-    def __call__(self, o):
-        if o._is_response():
-            c = o.request
-        else:
-            c = o
-        return re.search(self.expr, c.get_url())
+    def __call__(self, f):
+        return re.search(self.expr, f.request.get_url())
 
 
 class _Int(_Action):
@@ -206,10 +204,9 @@ class _Int(_Action):
 class FCode(_Int):
     code = "c"
     help = "HTTP response code"
-    def __call__(self, o):
-        if o._is_response():
-            return o.code == self.num
-        return False
+    def __call__(self, f):
+        if f.response and f.response.code == self.num:
+            return True
 
 
 class FAnd(_Token):
@@ -221,8 +218,8 @@ class FAnd(_Token):
         for i in self.lst:
             i.dump(indent+1, fp)
 
-    def __call__(self, o):
-        return all([i(o) for i in self.lst])
+    def __call__(self, f):
+        return all(i(f) for i in self.lst)
 
 
 class FOr(_Token):
@@ -234,8 +231,8 @@ class FOr(_Token):
         for i in self.lst:
             i.dump(indent+1, fp)
 
-    def __call__(self, o):
-        return any([i(o) for i in self.lst])
+    def __call__(self, f):
+        return any(i(f) for i in self.lst)
 
 
 class FNot(_Token):
@@ -246,12 +243,14 @@ class FNot(_Token):
         print >> fp, "\t"*indent, self.__class__.__name__
         self.itm.dump(indent + 1, fp)
 
-    def __call__(self, o):
-        return not self.itm(o)
+    def __call__(self, f):
+        return not self.itm(f)
+
 
 filt_unary = [
     FReq,
-    FResp
+    FResp,
+    FErr
 ]
 filt_rex = [
     FHeadRequest,
@@ -260,6 +259,7 @@ filt_rex = [
     FBodRequest,
     FBodResponse,
     FBod,
+    FMethod,
     FUrl,
     FRequestContentType,
     FResponseContentType,
@@ -277,7 +277,7 @@ def _make():
         f.setParseAction(klass.make)
         parts.append(f)
 
-    simplerex = "".join([c for c in pp.printables if c not in  "()~'\""])
+    simplerex = "".join(c for c in pp.printables if c not in  "()~'\"")
     rex = pp.Word(simplerex) |\
           pp.QuotedString("\"", escChar='\\') |\
           pp.QuotedString("'", escChar='\\')
