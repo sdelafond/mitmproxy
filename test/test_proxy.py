@@ -1,22 +1,53 @@
-import cStringIO, time
+import cStringIO, textwrap
+from cStringIO import StringIO
 import libpry
-from libmproxy import proxy, controller, utils, dump
+from libmproxy import proxy, flow
 
 
 class u_read_chunked(libpry.AutoTree):
     def test_all(self):
         s = cStringIO.StringIO("1\r\na\r\n0\r\n")
-        libpry.raises(IOError, proxy.read_chunked, s)
+        libpry.raises(IOError, proxy.read_chunked, s, None)
 
         s = cStringIO.StringIO("1\r\na\r\n0\r\n\r\n")
-        assert proxy.read_chunked(s) == "a"
+        assert proxy.read_chunked(s, None) == "a"
 
         s = cStringIO.StringIO("\r\n")
-        libpry.raises(IOError, proxy.read_chunked, s)
+        libpry.raises(IOError, proxy.read_chunked, s, None)
 
         s = cStringIO.StringIO("1\r\nfoo")
-        libpry.raises(IOError, proxy.read_chunked, s)
+        libpry.raises(IOError, proxy.read_chunked, s, None)
 
+        s = cStringIO.StringIO("foo\r\nfoo")
+        libpry.raises(proxy.ProxyError, proxy.read_chunked, s, None)
+
+
+class Dummy: pass
+
+
+class u_read_http_body(libpry.AutoTree):
+    def test_all(self):
+
+        d = Dummy()
+        h = flow.ODict()
+        s = cStringIO.StringIO("testing")
+        assert proxy.read_http_body(s, d, h, False, None) == ""
+
+        h["content-length"] = ["foo"]
+        s = cStringIO.StringIO("testing")
+        libpry.raises(proxy.ProxyError, proxy.read_http_body, s, d, h, False, None)
+
+        h["content-length"] = [5]
+        s = cStringIO.StringIO("testing")
+        assert len(proxy.read_http_body(s, d, h, False, None)) == 5
+        s = cStringIO.StringIO("testing")
+        libpry.raises(proxy.ProxyError, proxy.read_http_body, s, d, h, False, 4)
+
+        h = flow.ODict()
+        s = cStringIO.StringIO("testing")
+        assert len(proxy.read_http_body(s, d, h, True, 4)) == 4
+        s = cStringIO.StringIO("testing")
+        assert len(proxy.read_http_body(s, d, h, True, 100)) == 7
 
 
 class u_parse_request_line(libpry.AutoTree):
@@ -64,9 +95,51 @@ class uProxyError(libpry.AutoTree):
         assert repr(p)
 
 
+class u_read_headers(libpry.AutoTree):
+    def test_read_simple(self):
+        data = """
+            Header: one
+            Header2: two
+            \r\n
+        """
+        data = textwrap.dedent(data)
+        data = data.strip()
+        s = StringIO(data)
+        headers = proxy.read_headers(s)
+        assert headers["header"] == ["one"]
+        assert headers["header2"] == ["two"]
+
+    def test_read_multi(self):
+        data = """
+            Header: one
+            Header: two
+            \r\n
+        """
+        data = textwrap.dedent(data)
+        data = data.strip()
+        s = StringIO(data)
+        headers = proxy.read_headers(s)
+        assert headers["header"] == ["one", "two"]
+
+    def test_read_continued(self):
+        data = """
+            Header: one
+            \ttwo
+            Header2: three
+            \r\n
+        """
+        data = textwrap.dedent(data)
+        data = data.strip()
+        s = StringIO(data)
+        headers = proxy.read_headers(s)
+        assert headers["header"] == ['one\r\n two']
+
+
 tests = [
     uProxyError(),
     uFileLike(),
     u_parse_request_line(),
     u_read_chunked(),
+    u_read_http_body(),
+    u_read_headers()
 ]

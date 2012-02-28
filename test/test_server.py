@@ -1,5 +1,4 @@
 import urllib, urllib2
-from libmproxy import flow
 import tutils
 
 class uSanity(tutils.ProxTest):
@@ -41,7 +40,7 @@ class uProxy(tutils.ProxTest):
         assert f.code == 200
         assert f.read()
         f.close()
-            
+
         l = self.log()
         assert l[0].address
         assert "host" in l[1].headers

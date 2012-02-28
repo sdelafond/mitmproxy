@@ -27,7 +27,7 @@ def findPackages(path, dataExclude=[]):
         that only data _directories_ and their contents are returned -
         non-Python files at module scope are not, and should be manually
         included.
-        
+
         dataExclude is a list of fnmatch-compatible expressions for files and
         directories that should not be included in pakcage_data.
 
@@ -65,14 +65,12 @@ def findPackages(path, dataExclude=[]):
     return packages, package_data
 
 
-
-
-long_description = file("README.mkd").read()
+long_description = file("README.txt").read()
 packages, package_data = findPackages("libmproxy")
 setup(
         name = "mitmproxy",
         version = version.VERSION,
-        description = "An interactive SSL-capable intercepting HTTP proxy for penetration testers and software developers.",
+        description = "An interactive, SSL-capable, man-in-the-middle HTTP proxy for penetration testers and software developers.",
         long_description = long_description,
         author = "Aldo Cortesi",
         author_email = "aldo@corte.si",
@@ -81,10 +79,18 @@ setup(
         package_data = package_data,
         scripts = ["mitmproxy", "mitmdump"],
         classifiers = [
-            "Development Status :: 4 - Beta",
+            "License :: OSI Approved :: GNU General Public License (GPL)",
+            "Development Status :: 5 - Production/Stable",
+            "Environment :: Console",
+            "Environment :: Console :: Curses",
+            "Operating System :: MacOS :: MacOS X",
+            "Operating System :: POSIX",
             "Programming Language :: Python",
             "Topic :: Security",
+            "Topic :: Internet",
             "Topic :: Internet :: WWW/HTTP",
+            "Topic :: Internet :: Proxy Servers",
             "Topic :: Software Development :: Testing"
-        ]
+        ],
+        install_requires=['urwid'],
 )

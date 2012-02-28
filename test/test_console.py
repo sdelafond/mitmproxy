@@ -1,4 +1,5 @@
-from libmproxy import console, filt, flow
+from libmproxy import console
+from libmproxy.console import common
 import tutils
 import libpry
 
@@ -71,14 +72,14 @@ class uState(libpry.AutoTree):
         self._add_response(c)
         self._add_request(c)
         self._add_response(c)
-        assert not c.set_limit("~q")
+        assert not c.set_limit("~s")
         assert len(c.view) == 3
         assert c.focus == 0
 
 
 class uformat_keyvals(libpry.AutoTree):
     def test_simple(self):
-        assert console.format_keyvals(
+        assert common.format_keyvals(
             [
                 ("aa", "bb"),
                 None,
@@ -87,36 +88,6 @@ class uformat_keyvals(libpry.AutoTree):
                 (None, "dd"),
             ]
         )
-
-
-class uformat_flow(libpry.AutoTree):
-    def test_simple(self):
-        f = tutils.tflow()
-        foc = ('focus', '>>')
-        assert foc not in console.format_flow(f, False)
-        assert foc in console.format_flow(f, True)
-
-        assert foc not in console.format_flow(f, False, True)
-        assert foc in console.format_flow(f, True, True)
-
-        f.response = tutils.tresp()
-        f.request = f.response.request
-        f.backup()
-
-        f.request._set_replay()
-        f.response._set_replay()
-        assert ('method', '[replay]') in console.format_flow(f, True)
-        assert ('method', '[replay]') in console.format_flow(f, True, True)
-
-        f.response.code = 404
-        assert ('error', '404') in console.format_flow(f, True, True)
-        f.response.headers["content-type"] = ["text/html"]
-        assert ('text', ' text/html') in console.format_flow(f, True, True)
-
-        f.response =None
-        f.error = flow.Error(f.request, "error")
-        assert ('error', 'error') in console.format_flow(f, True, True)
-
 
 
 class uPathCompleter(libpry.AutoTree):
@@ -168,8 +139,7 @@ class uOptions(libpry.AutoTree):
 
 tests = [
     uformat_keyvals(),
-    uformat_flow(),
-    uState(), 
+    uState(),
     uPathCompleter(),
     uOptions()
 ]

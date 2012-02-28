@@ -1,19 +1,18 @@
 # Copyright (C) 2010  Aldo Cortesi
-# 
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys
 import Queue, threading
 
 should_exit = False
@@ -26,11 +25,12 @@ class Msg:
         self.acked = False
 
     def _ack(self, data=False):
-        self.acked = True
-        if data is None:
-            self.q.put(data)
-        else:
-            self.q.put(data or self)
+        if not self.acked:
+            self.acked = True
+            if data is None:
+                self.q.put(data)
+            else:
+                self.q.put(data or self)
 
     def _send(self, masterq):
         self.acked = False
@@ -81,6 +81,8 @@ class Master:
         return changed
 
     def run(self):
+        global should_exit
+        should_exit = False
         if self.server:
             slave = Slave(self.masterq, self.server)
             slave.start()

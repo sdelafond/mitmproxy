@@ -1,23 +1,23 @@
-
 __mitmproxy__ is an SSL-capable man-in-the-middle proxy for HTTP. It provides a
 console interface that allows traffic flows to be inspected and edited on the
 fly.
 
 __mitmdump__ is the command-line version of mitmproxy, with the same
-functionality but without the frills. Think tcpdump for HTTP.
+functionality but without the user interface. Think tcpdump for HTTP.
 
-Both tools are fully documentented in the commandline _--help_ flag, and, in
-the case of __mitmproxy__, a built-in help page accessible through the _?_
-keyboard shortcut.
+Complete documentation and a set of practical tutorials is included in the
+distribution package, and is also available at
+[mitmproxy.org](http://mitmproxy.org).
 
 
-Capabilities
-------------
+Features
+--------
 
 - Intercept HTTP requests and responses and modify them on the fly.
 - Save complete HTTP conversations for later replay and analysis.
 - Replay the client-side of an HTTP conversations.
 - Replay HTTP responses of a previously recorded server.
+- Reverse proxy mode to forward traffic to a specified server.
 - Make scripted changes to HTTP traffic using Python. 
 - SSL certificates for interception are generated on the fly.
 
@@ -32,6 +32,17 @@ Releases and rendered documentation can be found on the mitmproxy website:
 Source is hosted on github: 
 
 [github.com/cortesi/mitmproxy](http://github.com/cortesi/mitmproxy)
+
+
+Community
+---------
+
+Come join us in the #mitmproxy channel on the OFTC IRC network
+(irc://irc.oftc.net:6667).
+
+We also have a mailing list, hosted here:
+
+    http://groups.google.com/group/mitmproxy
 
 
 Requirements

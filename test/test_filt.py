@@ -9,13 +9,14 @@ class uParsing(libpry.AutoTree):
         x.dump(fp=c)
         assert c.getvalue()
 
-    def test_err(self):
+    def test_parse_err(self):
         assert filt.parse("~h [") is None
 
     def test_simple(self):
         assert not filt.parse("~b")
         assert filt.parse("~q")
         assert filt.parse("~c 10")
+        assert filt.parse("~m foobar")
         assert filt.parse("~u foobar")
         assert filt.parse("~q ~c 10")
         p = filt.parse("~q ~c 10")
@@ -73,9 +74,9 @@ class uParsing(libpry.AutoTree):
 class uMatching(libpry.AutoTree):
     def req(self):
         conn = flow.ClientConnect(("one", 2222))
-        headers = flow.Headers()
+        headers = flow.ODictCaseless()
         headers["header"] = ["qvalue"]
-        return flow.Request(
+        req = flow.Request(
                     conn,
                     "host",
                     80,
@@ -85,18 +86,26 @@ class uMatching(libpry.AutoTree):
                     headers,
                     "content_request"
         )
+        return flow.Flow(req)
 
     def resp(self):
-        q = self.req()
-        headers = flow.Headers()
+        f = self.req()
+
+        headers = flow.ODictCaseless()
         headers["header_response"] = ["svalue"]
-        return flow.Response(
-                    q,
+        f.response = flow.Response(
+                    f.request,
                     200,
                     "message",
                     headers,
                     "content_response"
                 )
+        return f
+
+    def err(self):
+        f = self.req()
+        f.error = flow.Error(f.request, "msg")
+        return f
 
     def q(self, q, o):
         return filt.parse(q)(o)
@@ -107,15 +116,15 @@ class uMatching(libpry.AutoTree):
         assert not self.q("~t content", q)
         assert not self.q("~t content", s)
 
-        q.headers["content-type"] = ["text/json"]
+        q.request.headers["content-type"] = ["text/json"]
         assert self.q("~t json", q)
         assert self.q("~tq json", q)
         assert not self.q("~ts json", q)
 
-        s.headers["content-type"] = ["text/json"]
+        s.response.headers["content-type"] = ["text/json"]
         assert self.q("~t json", s)
 
-        del s.headers["content-type"]
+        del s.response.headers["content-type"]
         s.request.headers["content-type"] = ["text/json"]
         assert self.q("~t json", s)
         assert self.q("~tq json", s)
@@ -130,6 +139,10 @@ class uMatching(libpry.AutoTree):
 
         assert not self.q("~s", q)
         assert self.q("~s", s)
+
+    def test_ferr(self):
+        e = self.err()
+        assert self.q("~e", e)
 
     def test_head(self):
         q = self.req()
@@ -171,6 +184,15 @@ class uMatching(libpry.AutoTree):
         assert not self.q("~bs response", q)
         assert self.q("~bs response", s)
 
+    def test_method(self):
+        q = self.req()
+        s = self.resp()
+        assert self.q("~m get", q)
+        assert not self.q("~m post", q)
+
+        q.request.method = "oink"
+        assert not self.q("~m get", q)
+
     def test_url(self):
         q = self.req()
         s = self.resp()
@@ -192,6 +214,7 @@ class uMatching(libpry.AutoTree):
     def test_and(self):
         s = self.resp()
         assert self.q("~c 200 & ~h head", s)
+        assert self.q("~c 200 & ~h head", s)
         assert not self.q("~c 200 & ~h nohead", s)
         assert self.q("(~c 200 & ~h head) & ~b content", s)
         assert not self.q("(~c 200 & ~h head) & ~b nonexistent", s)
@@ -203,7 +226,6 @@ class uMatching(libpry.AutoTree):
         assert self.q("~c 201 | ~h head", s)
         assert not self.q("~c 201 | ~h nohead", s)
         assert self.q("(~c 201 | ~h nohead) | ~s", s)
-        assert not self.q("(~c 201 | ~h nohead) | ~q", s)
 
     def test_not(self):
         s = self.resp()

@@ -1,12 +1,11 @@
 from libmproxy import encoding
 import libpry
 
-import cStringIO
-
 class uidentity(libpry.AutoTree):
     def test_simple(self):
         assert "string" == encoding.decode("identity", "string")
         assert "string" == encoding.encode("identity", "string")
+        assert not encoding.encode("nonexistent", "string")
 
     def test_fallthrough(self):
         assert None == encoding.decode("nonexistent encoding", "string")
