@@ -15,7 +15,12 @@
 
 import urwid
 import common
-from .. import filt
+from .. import filt, version
+
+footer = [
+    ("heading", 'mitmproxy v%s '%version.VERSION),
+    ('heading_key', "q"), ":back ",
+]
 
 class HelpView(urwid.ListBox):
     def __init__(self, master, help_context, state):
@@ -34,6 +39,8 @@ class HelpView(urwid.ListBox):
             self.master.header = self.state[2]
             self.master.make_view()
             return None
+        elif key == "?":
+            key = None
         return urwid.ListBox.keypress(self, size, key)
 
     def helptext(self):
@@ -55,28 +62,65 @@ class HelpView(urwid.ListBox):
         keys = [
             ("c", "client replay"),
             ("i", "set interception pattern"),
-
+            ("M", "change global default display mode"),
+                (None,
+                    common.highlight_key("automatic", "a") +
+                    [("text", ": automatic detection")]
+                ),
+                (None,
+                    common.highlight_key("hex", "h") +
+                    [("text", ": Hex")]
+                ),
+                (None,
+                    common.highlight_key("image", "i") +
+                    [("text", ": Image")]
+                ),
+                (None,
+                    common.highlight_key("javascript", "j") +
+                    [("text", ": JavaScript")]
+                ),
+                (None,
+                    common.highlight_key("json", "s") +
+                    [("text", ": JSON")]
+                ),
+                (None,
+                    common.highlight_key("urlencoded", "u") +
+                    [("text", ": URL-encoded data")]
+                ),
+                (None,
+                    common.highlight_key("raw", "r") +
+                    [("text", ": raw data")]
+                ),
+                (None,
+                    common.highlight_key("xml", "x") +
+                    [("text", ": XML")]
+                ),
             ("o", "toggle options:"),
-            (None,
-                common.highlight_key("anticache", "a") +
-                [("text", ": prevent cached responses")]
-            ),
-            (None,
-                common.highlight_key("anticomp", "c") +
-                [("text", ": prevent compressed responses")]
-            ),
-            (None,
-                common.highlight_key("killextra", "k") +
-                [("text", ": kill requests not part of server replay")]
-            ),
-            (None,
-                common.highlight_key("norefresh", "n") +
-                [("text", ": disable server replay response refresh")]
-            ),
+                (None,
+                    common.highlight_key("anticache", "a") +
+                    [("text", ": prevent cached responses")]
+                ),
+                (None,
+                    common.highlight_key("anticomp", "c") +
+                    [("text", ": prevent compressed responses")]
+                ),
+                (None,
+                    common.highlight_key("killextra", "k") +
+                    [("text", ": kill requests not part of server replay")]
+                ),
+                (None,
+                    common.highlight_key("norefresh", "n") +
+                    [("text", ": disable server replay response refresh")]
+                ),
+                (None,
+                    common.highlight_key("upstream certs", "u") +
+                    [("text", ": sniff cert info from upstream server")]
+                ),
 
             ("q", "quit / return to flow list"),
             ("Q", "quit without confirm prompt"),
-            ("R", "set reverse proxy mode"),
+            ("P", "set reverse proxy mode"),
+            ("R", "edit replacement patterns"),
             ("s", "set/unset script"),
             ("S", "server replay"),
             ("t", "set sticky cookie expression"),

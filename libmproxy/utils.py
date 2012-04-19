@@ -12,12 +12,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import re, os, subprocess, datetime, urlparse, string, urllib
-import time, functools, cgi, textwrap, hashlib
+import os, datetime, urlparse, string, urllib
+import time, functools, cgi
 import json
-
-CERT_SLEEP_TIME = 1
-CERT_EXPIRY = str(365 * 3)
 
 def timestamp():
     """
@@ -57,61 +54,22 @@ def isXML(s):
             return False
 
 
-def cleanBin(s):
+def cleanBin(s, fixspacing=False):
+    """
+        Cleans binary data to make it safe to display. If fixspacing is True,
+        tabs, newlines and so forth will be maintained, if not, they will be
+        replaced with a placeholder.
+    """
     parts = []
     for i in s:
         o = ord(i)
-        if o > 31 and o < 127:
+        if (o > 31 and o < 127):
+            parts.append(i)
+        elif i in "\n\r\t" and not fixspacing:
             parts.append(i)
         else:
-            if i not in "\n\r\t":
-                parts.append(".")
+            parts.append(".")
     return "".join(parts)
-
-
-TAG = r"""
-        <\s*
-        (?!\s*[!"])
-        (?P<close>\s*\/)?
-        (?P<name>\w+)
-        (
-            [^'"\t >]+ |
-            "[^\"]*"['\"]* |
-            '[^']*'['\"]* |
-            \s+
-        )*
-        (?P<selfcont>\s*\/\s*)?
-        \s*>
-      """
-UNI = set(["br", "hr", "img", "input", "area", "link"])
-INDENT = " "*4
-def pretty_xmlish(s):
-    """
-        A robust pretty-printer for XML-ish data.
-        Returns a list of lines.
-    """
-    s = cleanBin(s)
-    data, offset, indent, prev = [], 0, 0, None
-    for i in re.finditer(TAG, s, re.VERBOSE|re.MULTILINE):
-        start, end = i.span()
-        name = i.group("name")
-        if start > offset:
-            txt = []
-            for x in textwrap.dedent(s[offset:start]).split("\n"):
-                if x.strip():
-                    txt.append(indent*INDENT + x)
-            data.extend(txt)
-        if i.group("close") and not (name in UNI and name==prev):
-            indent = max(indent - 1, 0)
-        data.append(indent*INDENT + i.group().strip())
-        offset = end
-        if not any([i.group("close"), i.group("selfcont"), name in UNI]):
-            indent += 1
-        prev = name
-    trail = s[offset:]
-    if trail.strip():
-        data.append(s[offset:])
-    return data
 
 
 def pretty_json(s):
@@ -133,6 +91,7 @@ def urlencode(s):
     """
         Takes a list of (key, value) tuples and returns a urlencoded string.
     """
+    s = [tuple(i) for i in s]
     return urllib.urlencode(s, False)
 
 
@@ -150,7 +109,7 @@ def hexdump(s):
             x += " "
             x += " ".join("  " for i in range(16 - len(part)))
         parts.append(
-            (o, x, cleanBin(part))
+            (o, x, cleanBin(part, True))
         )
     return parts
 
@@ -195,166 +154,6 @@ class Data:
             raise ValueError, "dataPath: %s does not exist."%fullpath
         return fullpath
 pkg_data = Data(__name__)
-
-
-def dummy_ca(path):
-    """
-        Creates a dummy CA, and writes it to path.
-
-        This function also creates the necessary directories if they don't exist.
-
-        Returns True if operation succeeded, False if not.
-    """
-    dirname = os.path.dirname(path)
-    if not os.path.exists(dirname):
-        os.makedirs(dirname)
-
-    if path.endswith(".pem"):
-        basename, _ = os.path.splitext(path)
-    else:
-        basename = path
-
-    cmd = [
-        "openssl",
-        "req",
-        "-new",
-        "-x509",
-        "-config", pkg_data.path("resources/ca.cnf"),
-        "-nodes",
-        "-days", CERT_EXPIRY,
-        "-out", path,
-        "-newkey", "rsa:1024",
-        "-keyout", path,
-    ]
-    ret = subprocess.call(
-        cmd,
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stdin=subprocess.PIPE
-    )
-    # begin nocover
-    if ret:
-        return False
-    # end nocover
-
-    cmd = [
-        "openssl",
-        "pkcs12",
-        "-export",
-        "-password", "pass:",
-        "-nokeys",
-        "-in", path,
-        "-out", os.path.join(dirname, basename + "-cert.p12")
-    ]
-    ret = subprocess.call(
-        cmd,
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stdin=subprocess.PIPE
-    )
-    # begin nocover
-    if ret:
-        return False
-    # end nocover
-    cmd = [
-        "openssl",
-        "x509",
-        "-in", path,
-        "-out", os.path.join(dirname, basename + "-cert.pem")
-    ]
-    ret = subprocess.call(
-        cmd,
-        stderr=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stdin=subprocess.PIPE
-    )
-    # begin nocover
-    if ret:
-        return False
-    # end nocover
-
-    return True
-
-
-def dummy_cert(certdir, ca, commonname):
-    """
-        certdir: Certificate directory.
-        ca: Path to the certificate authority file, or None.
-        commonname: Common name for the generated certificate.
-
-        Returns cert path if operation succeeded, None if not.
-    """
-    namehash = hashlib.sha256(commonname).hexdigest()
-    certpath = os.path.join(certdir, namehash + ".pem")
-    if os.path.exists(certpath):
-        return certpath
-
-    confpath = os.path.join(certdir, namehash + ".cnf")
-    reqpath = os.path.join(certdir, namehash + ".req")
-
-    template = open(pkg_data.path("resources/cert.cnf")).read()
-    f = open(confpath, "w")
-    f.write(template%(dict(commonname=commonname)))
-    f.close()
-
-    if ca:
-        # Create a dummy signed certificate. Uses same key as the signing CA
-        cmd = [
-            "openssl",
-            "req",
-            "-new",
-            "-config", confpath,
-            "-out", reqpath,
-            "-key", ca,
-        ]
-        ret = subprocess.call(
-            cmd,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stdin=subprocess.PIPE
-        )
-        if ret: return None
-        cmd = [
-            "openssl",
-            "x509",
-            "-req",
-            "-in", reqpath,
-            "-days", CERT_EXPIRY,
-            "-out", certpath,
-            "-CA", ca,
-            "-CAcreateserial",
-            "-extfile", confpath,
-            "-extensions", "v3_cert",
-        ]
-        ret = subprocess.call(
-            cmd,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stdin=subprocess.PIPE
-        )
-        if ret: return None
-    else:
-        # Create a new selfsigned certificate + key
-        cmd = [
-            "openssl",
-            "req",
-            "-new",
-            "-x509",
-            "-config", confpath,
-            "-nodes",
-            "-days", CERT_EXPIRY,
-            "-out", certpath,
-            "-newkey", "rsa:1024",
-            "-keyout", certpath,
-        ]
-        ret = subprocess.call(
-            cmd,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stdin=subprocess.PIPE
-        )
-        if ret: return None
-    return certpath
 
 
 class LRUCache:
@@ -425,6 +224,33 @@ def parse_proxy_spec(url):
     if not p or not p[1]:
         return None
     return p[:3]
+
+
+def parse_content_type(c):
+    """
+        A simple parser for content-type values. Returns a (type, subtype,
+        parameters) tuple, where type and subtype are strings, and parameters
+        is a dict. If the string could not be parsed, return None.
+
+        E.g. the following string:
+
+            text/html; charset=UTF-8
+
+        Returns:
+
+            ("text", "html", {"charset": "UTF-8"})
+    """
+    parts = c.split(";", 1)
+    ts = parts[0].split("/", 1)
+    if len(ts) != 2:
+        return None
+    d = {}
+    if len(parts) == 2:
+        for i in parts[1].split(";"):
+            clause = i.split("=", 1)
+            if len(clause) == 2:
+                d[clause[0].strip()] = clause[1].strip()
+    return ts[0].lower(), ts[1].lower(), d
 
 
 def hostport(scheme, host, port):

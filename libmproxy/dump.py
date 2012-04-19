@@ -28,7 +28,9 @@ class Options(object):
         "keepserving",
         "kill",
         "no_server",
+        "nopop",
         "refresh_server_playback",
+        "replacements",
         "rfile",
         "rheaders",
         "server_replay",
@@ -93,11 +95,16 @@ class DumpMaster(flow.FlowMaster):
             except IOError, v:
                 raise DumpError(v.strerror)
 
+        if options.replacements:
+            for i in options.replacements:
+                self.replacehooks.add(*i)
+
         if options.server_replay:
             self.start_server_playback(
                 self._readflow(options.server_replay),
                 options.kill, options.rheaders,
-                not options.keepserving
+                not options.keepserving,
+                options.nopop
             )
 
         if options.client_replay:
@@ -139,7 +146,6 @@ class DumpMaster(flow.FlowMaster):
 
     def handle_request(self, r):
         f = flow.FlowMaster.handle_request(self, r)
-        self.add_event("Request: %s"%str_request(r))
         if f:
             r._ack()
         return f

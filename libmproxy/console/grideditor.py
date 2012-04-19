@@ -13,10 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import copy
+import copy, re
 import urwid
 import common
-from .. import utils
+from .. import utils, filt
 
 
 def _mkhelp():
@@ -35,12 +35,25 @@ def _mkhelp():
     return text
 help_context = _mkhelp()
 
+footer = [
+    ('heading_key', "enter"), ":edit ",
+    ('heading_key', "q"), ":back ",
+]
+footer_editing = [
+    ('heading_key', "esc"), ":stop editing ",
+]
+
 
 class SText(common.WWrap):
-    def __init__(self, txt, focused):
+    def __init__(self, txt, focused, error):
         w = urwid.Text(txt, wrap="any")
         if focused:
-            w = urwid.AttrWrap(w, "focusfield")
+            if error:
+                w = urwid.AttrWrap(w, "focusfield_error")
+            else:
+                w = urwid.AttrWrap(w, "focusfield")
+        elif error:
+            w = urwid.AttrWrap(w, "field_error")
         common.WWrap.__init__(self, w)
 
     def get_text(self):
@@ -66,49 +79,60 @@ class SEdit(common.WWrap):
         return True
 
 
-class KVItem(common.WWrap):
-    def __init__(self, focused, editing, maxk, k, v):
-        self.focused, self.editing, self.maxk = focused, editing, maxk
-        if focused == 0 and editing:
-            self.editing = self.kf = SEdit(k)
-        else:
-            self.kf = SText(k, True if focused == 0 else False)
+class GridRow(common.WWrap):
+    def __init__(self, focused, editing, editor, values):
+        self.focused, self.editing, self.editor = focused, editing, editor
 
-        if focused == 1 and editing:
-            self.editing = self.vf = SEdit(v)
-        else:
-            self.vf = SText(v, True if focused == 1 else False)
+        errors = values[1]
+        self.fields = []
+        for i, v in enumerate(values[0]):
+            if focused == i and editing:
+                self.editing = SEdit(v)
+                self.fields.append(self.editing)
+            else:
+                self.fields.append(
+                    SText(v, True if focused == i else False, i in errors)
+                )
 
+        fspecs = self.fields[:]
+        fspecs[0] = ("fixed", self.editor.first_width + 2, fspecs[0])
         w = urwid.Columns(
-            [
-                ("fixed", maxk + 2, self.kf),
-                self.vf
-            ],
+            fspecs,
             dividechars = 2
         )
         if focused is not None:
             w.set_focus_column(focused)
         common.WWrap.__init__(self, w)
 
-    def get_kv(self):
-        return (self.kf.get_text(), self.vf.get_text())
+    def get_value(self):
+        vals = []
+        errors = set([])
+        for i, f in enumerate(self.fields):
+            v = f.get_text()
+            vals.append(v)
+            if self.editor.is_error(i, v):
+                errors.add(i)
+        return [vals, errors]
 
     def keypress(self, s, k):
         if self.editing:
-            k = self.editing.keypress((s[0]-self.maxk-4,), k)
+            w = self.w.column_widths(s)[self.focused]
+            k = self.editing.keypress((w,), k)
         return k
 
     def selectable(self):
         return True
 
 
-KEY_MAX = 30
-class KVWalker(urwid.ListWalker):
+class GridWalker(urwid.ListWalker):
+    """
+        Stores rows as a list of (rows, errors) tuples, where rows is a list
+        and errors is a set with an entry of each offset in rows that is an
+        error.
+    """
     def __init__(self, lst, editor):
-        self.lst, self.editor = lst, editor
-        self.maxk = min(max(len(v[0]) for v in lst), KEY_MAX) if lst else 20
-        if self.maxk < 20:
-            self.maxk = 20
+        self.lst = [(i, set([])) for i in lst]
+        self.editor = editor
         self.focus = 0
         self.focus_col = 0
         self.editing = False
@@ -119,12 +143,12 @@ class KVWalker(urwid.ListWalker):
 
     def get_current_value(self):
         if self.lst:
-            return self.lst[self.focus][self.focus_col]
+            return self.lst[self.focus][0][self.focus_col]
 
     def set_current_value(self, val):
-        row = list(self.lst[self.focus])
+        row = list(self.lst[self.focus][0])
         row[self.focus_col] = val
-        self.lst[self.focus] = tuple(row)
+        self.lst[self.focus] = [tuple(row), set([])]
 
     def delete_focus(self):
         if self.lst:
@@ -134,7 +158,7 @@ class KVWalker(urwid.ListWalker):
 
     def _insert(self, pos):
         self.focus = pos
-        self.lst.insert(self.focus, ("", ""))
+        self.lst.insert(self.focus, [[""]*self.editor.columns, set([])])
         self.focus_col = 0
         self.start_edit()
 
@@ -146,27 +170,29 @@ class KVWalker(urwid.ListWalker):
 
     def start_edit(self):
         if self.lst:
-            self.editing = KVItem(self.focus_col, True, self.maxk, *self.lst[self.focus])
+            self.editing = GridRow(self.focus_col, True, self.editor, self.lst[self.focus])
+            self.editor.master.statusbar.update(footer_editing)
             self._modified()
 
     def stop_edit(self):
         if self.editing:
-            self.lst[self.focus] = self.editing.get_kv()
+            self.editor.master.statusbar.update(footer)
+            self.lst[self.focus] = self.editing.get_value()
             self.editing = False
             self._modified()
 
     def left(self):
-        self.focus_col = 0
+        self.focus_col = max(self.focus_col - 1, 0)
         self._modified()
 
     def right(self):
-        self.focus_col = 1
+        self.focus_col = min(self.focus_col + 1, self.editor.columns-1)
         self._modified()
 
     def tab_next(self):
         self.stop_edit()
-        if self.focus_col == 0:
-            self.focus_col = 1
+        if self.focus_col < self.editor.columns-1:
+            self.focus_col += 1
         elif self.focus != len(self.lst)-1:
             self.focus_col = 0
             self.focus += 1
@@ -176,7 +202,7 @@ class KVWalker(urwid.ListWalker):
         if self.editing:
             return self.editing, self.focus
         elif self.lst:
-            return KVItem(self.focus_col, False, self.maxk, *self.lst[self.focus]), self.focus
+            return GridRow(self.focus_col, False, self.editor, self.lst[self.focus]), self.focus
         else:
             return None, None
 
@@ -187,30 +213,57 @@ class KVWalker(urwid.ListWalker):
     def get_next(self, pos):
         if pos+1 >= len(self.lst):
             return None, None
-        return KVItem(None, False, self.maxk, *self.lst[pos+1]), pos+1
+        return GridRow(None, False, self.editor, self.lst[pos+1]), pos+1
 
     def get_prev(self, pos):
         if pos-1 < 0:
             return None, None
-        return KVItem(None, False, self.maxk, *self.lst[pos-1]), pos-1
+        return GridRow(None, False, self.editor, self.lst[pos-1]), pos-1
 
 
-class KVListBox(urwid.ListBox):
+class GridListBox(urwid.ListBox):
     def __init__(self, lw):
         urwid.ListBox.__init__(self, lw)
 
 
-class KVEditor(common.WWrap):
-    def __init__(self, master, title, value, callback, *cb_args, **cb_kwargs):
+FIRST_WIDTH_MAX = 40
+FIRST_WIDTH_MIN = 20
+class GridEditor(common.WWrap):
+    def __init__(self, master, value, callback, *cb_args, **cb_kwargs):
         value = copy.deepcopy(value)
-        self.master, self.title, self.value, self.callback = master, title, value, callback
+        self.master, self.value, self.callback = master, value, callback
         self.cb_args, self.cb_kwargs = cb_args, cb_kwargs
-        p = urwid.Text(title)
-        p = urwid.Padding(p, align="left", width=("relative", 100))
-        p = urwid.AttrWrap(p, "heading")
-        self.walker = KVWalker(self.value, self)
-        self.lb = KVListBox(self.walker)
-        self.w = urwid.Frame(self.lb, header = p)
+
+        first_width = 20
+        if value:
+            for r in value:
+                assert len(r) == self.columns
+                first_width = max(len(r), first_width)
+        self.first_width = min(first_width, FIRST_WIDTH_MAX)
+
+        title = urwid.Text(self.title)
+        title = urwid.Padding(title, align="left", width=("relative", 100))
+        title = urwid.AttrWrap(title, "heading")
+
+        headings = []
+        for i, h in enumerate(self.headings):
+            c = urwid.Text(h)
+            if i == 0:
+                headings.append(("fixed", first_width + 2, c))
+            else:
+                headings.append(c)
+        h = urwid.Columns(
+            headings,
+            dividechars = 2
+        )
+        h = urwid.AttrWrap(h, "heading")
+
+        self.walker = GridWalker(self.value, self)
+        self.lb = GridListBox(self.walker)
+        self.w = urwid.Frame(
+            self.lb,
+            header = urwid.Pile([title, h])
+        )
         self.master.statusbar.update("")
         self.show_empty_msg()
 
@@ -230,7 +283,7 @@ class KVEditor(common.WWrap):
 
     def keypress(self, size, key):
         if self.walker.editing:
-            if key in ["esc", "enter"]:
+            if key in ["esc"]:
                 self.walker.stop_edit()
             elif key == "tab":
                 pf, pfc = self.walker.focus, self.walker.focus_col
@@ -243,7 +296,11 @@ class KVEditor(common.WWrap):
 
         key = common.shortcuts(key)
         if key in ["q", "esc"]:
-            self.callback(self.walker.lst, *self.cb_args, **self.cb_kwargs)
+            res = []
+            for i in self.walker.lst:
+                if any([x.strip() for x in i[0]]):
+                    res.append(i[0])
+            self.callback(res, *self.cb_args, **self.cb_kwargs)
             self.master.pop_view()
         elif key in ["h", "left"]:
             self.walker.left()
@@ -268,3 +325,41 @@ class KVEditor(common.WWrap):
             self.walker.start_edit()
         else:
             return self.w.keypress(size, key)
+
+    def is_error(self, col, val):
+        return False
+
+
+class QueryEditor(GridEditor):
+    title = "Editing query"
+    columns = 2
+    headings = ("Key", "Value")
+
+
+class HeaderEditor(GridEditor):
+    title = "Editing headers"
+    columns = 2
+    headings = ("Key", "Value")
+
+
+class URLEncodedFormEditor(GridEditor):
+    title = "Editing URL-encoded form"
+    columns = 2
+    headings = ("Key", "Value")
+
+
+class ReplaceEditor(GridEditor):
+    title = "Editing replacement patterns"
+    columns = 3
+    headings = ("Filter", "Regex", "Replacement")
+    def is_error(self, col, val):
+        if col == 0:
+            if not filt.parse(val):
+                return True
+        elif col == 1:
+            try:
+                re.compile(val)
+            except re.error:
+                return True
+        return False
+

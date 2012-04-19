@@ -37,7 +37,7 @@ Community
 ---------
 
 Come join us in the #mitmproxy channel on the OFTC IRC network
-(irc://irc.oftc.net:6667).
+(irc.oftc.net, port 6667).
 
 We also have a mailing list, hosted here:
 
@@ -48,13 +48,21 @@ Requirements
 ------------
 
 * Python_ 2.6.x or 2.7.x.
-* openssl_ - installed by default on most systems.
+* PyOpenSSL_ 0.12 or newer.
+* pyasn1_ 0.1.2 or newer.
 * urwid_  version 0.9.8 or newer.
+* PIL_  version 1.1 or newer.
+* lxml_ version 2.3 or newer.
+
+The following auxiliary components may be needed if you plan to hack on
+mitmproxy:
+
 * The test suite uses the pry_ unit testing
   library.
 * Rendering the documentation requires countershape_.
 
-**mitmproxy** is tested and developed on OSX, Linux and OpenBSD. 
+**mitmproxy** is tested and developed on OSX, Linux and OpenBSD. Windows is not
+supported at the moment.
 
 You should also make sure that your console environment is set up with the
 following: 
@@ -67,8 +75,10 @@ following:
 .. _mitmproxy.org: http://mitmproxy.org
 .. _github.com/cortesi/mitmproxy: http://github.com/cortesi/mitmproxy
 .. _python: http://www.python.org
-.. _openssl: http://www.openssl.org/
+.. _PyOpenSSL: http://pypi.python.org/pypi/pyOpenSSL
+.. _pyasn1: http://pypi.python.org/pypi/pyasn1
+.. _PIL: http://www.pythonware.com/products/pil/
+.. _lxml: http://lxml.de/
 .. _urwid: http://excess.org/urwid/
 .. _pry: http://github.com/cortesi/pry
 .. _countershape: http://github.com/cortesi/countershape
-
