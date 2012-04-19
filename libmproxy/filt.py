@@ -40,7 +40,6 @@
 """
 import re, sys
 import contrib.pyparsing as pp
-import flow
 
 
 class _Token:
@@ -86,6 +85,7 @@ class _Rex(_Action):
             self.re = re.compile(self.expr)
         except:
             raise ValueError, "Cannot compile expression."
+
 
 def _check_content_type(expr, o):
     val = o.headers["content-type"]

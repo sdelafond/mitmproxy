@@ -21,7 +21,7 @@
 import sys, os, string, socket, time
 import shutil, tempfile, threading
 import optparse, SocketServer, ssl
-import utils, flow
+import utils, flow, certutils
 
 NAME = "mitmproxy"
 
@@ -35,12 +35,13 @@ class ProxyError(Exception):
 
 
 class ProxyConfig:
-    def __init__(self, certfile = None, ciphers = None, cacert = None, cert_wait_time=0, body_size_limit = None, reverse_proxy=None):
+    def __init__(self, certfile = None, ciphers = None, cacert = None, cert_wait_time=0, upstream_cert=False, body_size_limit = None, reverse_proxy=None):
         self.certfile = certfile
         self.ciphers = ciphers
         self.cacert = cacert
         self.certdir = None
         self.cert_wait_time = cert_wait_time
+        self.upstream_cert = upstream_cert
         self.body_size_limit = body_size_limit
         self.reverse_proxy = reverse_proxy
 
@@ -106,7 +107,7 @@ def read_chunked(fp, limit):
 
 def read_http_body(rfile, connection, headers, all, limit):
     if 'transfer-encoding' in headers:
-        if not ",".join(headers["transfer-encoding"]) == "chunked":
+        if not ",".join(headers["transfer-encoding"]).lower() == "chunked":
             raise IOError('Invalid transfer-encoding')
         content = read_chunked(rfile, limit)
     elif "content-length" in headers:
@@ -184,10 +185,14 @@ class FileLike:
             result += data
         return result
 
-    def readline(self):
+    def readline(self, size = None):
         result = ''
+        bytes_read = 0
         while True:
+            if size is not None and bytes_read >= size:
+                break
             ch = self.read(1)
+            bytes_read += 1
             if not ch:
                 break
             else:
@@ -224,6 +229,7 @@ class ServerConnection:
             self.port = request.port
             self.scheme = request.scheme
         self.close = False
+        self.cert = None
         self.server, self.rfile, self.wfile = None, None, None
         self.connect()
 
@@ -234,6 +240,8 @@ class ServerConnection:
             if self.scheme == "https":
                 server = ssl.wrap_socket(server)
             server.connect((addr, self.port))
+            if self.scheme == "https":
+                self.cert = server.getpeercert(True)
         except socket.error, err:
             raise ProxyError(502, 'Error connecting to "%s": %s' % (self.host, err))
         self.server = server
@@ -270,7 +278,7 @@ class ServerConnection:
             content = ""
         else:
             content = read_http_body(self.rfile, self, headers, True, self.config.body_size_limit)
-        return flow.Response(self.request, code, msg, headers, content)
+        return flow.Response(self.request, code, msg, headers, content, self.cert)
 
     def terminate(self):
         try:
@@ -343,11 +351,16 @@ class ProxyHandler(SocketServer.StreamRequestHandler):
         if server:
             server.terminate()
 
-    def find_cert(self, host):
+    def find_cert(self, host, port):
         if self.config.certfile:
             return self.config.certfile
         else:
-            ret = utils.dummy_cert(self.config.certdir, self.config.cacert, host)
+            sans = []
+            if self.config.upstream_cert:
+                cert = certutils.get_remote_cert(host, port)
+                sans = cert.altnames
+                host = cert.cn
+            ret = certutils.dummy_cert(self.config.certdir, self.config.cacert, host, sans)
             time.sleep(self.config.cert_wait_time)
             if not ret:
                 raise ProxyError(502, "mitmproxy: Unable to generate dummy cert.")
@@ -374,7 +387,7 @@ class ProxyHandler(SocketServer.StreamRequestHandler):
                         )
             self.wfile.flush()
             kwargs = dict(
-                certfile = self.find_cert(host),
+                certfile = self.find_cert(host, port),
                 keyfile = self.config.certfile or self.config.cacert,
                 server_side = True,
                 ssl_version = ssl.PROTOCOL_SSLv23,
@@ -468,6 +481,7 @@ ServerBase.daemon_threads = True        # Terminate workers when main thread ter
 class ProxyServer(ServerBase):
     request_queue_size = 20
     allow_reuse_address = True
+    bound = True
     def __init__(self, config, port, address=''):
         """
             Raises ProxyServerError if there's a startup problem.
@@ -481,6 +495,10 @@ class ProxyServer(ServerBase):
         self.certdir = tempfile.mkdtemp(prefix="mitmproxy")
         config.certdir = self.certdir
 
+    def start_slave(self, klass, masterq):
+        slave = klass(masterq, self)
+        slave.start()
+
     def set_mqueue(self, q):
         self.masterq = q
 
@@ -493,6 +511,18 @@ class ProxyServer(ServerBase):
             shutil.rmtree(self.certdir)
         except OSError:
             pass
+
+
+class DummyServer:
+    bound = False
+    def __init__(self, config):
+        self.config = config
+
+    def start_slave(self, klass, masterq):
+        pass
+
+    def shutdown(self):
+        pass
 
 
 # Command-line utils
@@ -520,7 +550,7 @@ def process_proxy_options(parser, options):
     cacert = os.path.join(options.confdir, "mitmproxy-ca.pem")
     cacert = os.path.expanduser(cacert)
     if not os.path.exists(cacert):
-        utils.dummy_ca(cacert)
+        certutils.dummy_ca(cacert)
     if getattr(options, "cache", None) is not None:
         options.cache = os.path.expanduser(options.cache)
     body_size_limit = utils.parse_size(options.body_size_limit)
@@ -538,5 +568,6 @@ def process_proxy_options(parser, options):
         ciphers = options.ciphers,
         cert_wait_time = options.cert_wait_time,
         body_size_limit = body_size_limit,
+        upstream_cert = options.upstream_cert,
         reverse_proxy = rp
     )

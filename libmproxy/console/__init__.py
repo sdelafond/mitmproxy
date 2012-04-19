@@ -14,10 +14,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import mailcap, mimetypes, tempfile, os, subprocess, glob, time, shlex
-import os.path, sys
+import os.path, sys, weakref
 import urwid
-from .. import controller, utils, flow, version
-import flowlist, flowview, help, common, kveditor, palettes
+from .. import controller, utils, flow
+import flowlist, flowview, help, common, grideditor, palettes, contentview, flowdetailview
 
 EVENTLOG_SIZE = 500
 
@@ -25,7 +25,6 @@ EVENTLOG_SIZE = 500
 class Stop(Exception): pass
 
 
-#begin nocover
 
 
 class _PathCompleter:
@@ -75,6 +74,7 @@ class _PathCompleter:
         self.final = ret[1]
         return ret[0]
 
+#begin nocover
 
 class PathEdit(urwid.Edit, _PathCompleter):
     def __init__(self, *args, **kwargs):
@@ -102,6 +102,11 @@ class ActionBar(common.WWrap):
         self.w = PathEdit(prompt, text)
 
     def prompt(self, prompt, text = ""):
+        # A (partial) workaround for this Urwid issue:
+        # https://github.com/Nic0/tyrs/issues/115
+        # We can remove it once veryone is beyond 1.0.1
+        if isinstance(prompt, basestring):
+            prompt = unicode(prompt)
         self.w = urwid.Edit(prompt, text or "")
 
     def message(self, message):
@@ -119,6 +124,10 @@ class StatusBar(common.WWrap):
     def get_status(self):
         r = []
 
+        if self.master.replacehooks.count():
+            r.append("[")
+            r.append(("heading_key", "R"))
+            r.append("eplacing]")
         if self.master.client_playback:
             r.append("[")
             r.append(("heading_key", "cplayback"))
@@ -126,7 +135,10 @@ class StatusBar(common.WWrap):
         if self.master.server_playback:
             r.append("[")
             r.append(("heading_key", "splayback"))
-            r.append(":%s to go]"%self.master.server_playback.count())
+            if self.master.nopop:
+                r.append(":%s in file]"%self.master.server_playback.count())
+            else:
+                r.append(":%s to go]"%self.master.server_playback.count())
         if self.master.state.intercept_txt:
             r.append("[")
             r.append(("heading_key", "i"))
@@ -143,10 +155,14 @@ class StatusBar(common.WWrap):
             r.append("[")
             r.append(("heading_key", "u"))
             r.append(":%s]"%self.master.stickyauth_txt)
-        if self.master.server and self.master.server.config.reverse_proxy:
+        if self.master.server.config.reverse_proxy:
             r.append("[")
-            r.append(("heading_key", "R"))
+            r.append(("heading_key", "P"))
             r.append(":%s]"%utils.unparse_url(*self.master.server.config.reverse_proxy))
+        if self.master.state.default_body_view != contentview.VIEW_AUTO:
+            r.append("[")
+            r.append(("heading_key", "M"))
+            r.append(":%s]"%contentview.VIEW_NAMES[self.master.state.default_body_view])
 
         opts = []
         if self.master.anticache:
@@ -157,6 +173,8 @@ class StatusBar(common.WWrap):
             opts.append("norefresh")
         if self.master.killextra:
             opts.append("killextra")
+        if self.master.server.config.upstream_cert:
+            opts.append("upstream-cert")
 
         if opts:
             r.append("[%s]"%(":".join(opts)))
@@ -173,10 +191,18 @@ class StatusBar(common.WWrap):
         if self.expire and time.time() > self.expire:
             self.message("")
 
-        t = [
-                ('heading', ("[%s]"%self.master.state.flow_count()).ljust(7)),
+        fc = self.master.state.flow_count()
+        if self.master.currentflow:
+            idx = self.master.state.view.index(self.master.currentflow) + 1
+            t = [
+                ('heading', ("[%s/%s]"%(idx, fc)).ljust(9))
             ]
-        if self.master.server:
+        else:
+            t = [
+                ('heading', ("[%s]"%fc).ljust(9))
+            ]
+
+        if self.master.server.bound:
             boundaddr = "[%s:%s]"%(self.master.server.address or "*", self.master.server.port)
         else:
             boundaddr = ""
@@ -216,6 +242,7 @@ class StatusBar(common.WWrap):
         else:
             self.expire = None
         self.ab.message(msg)
+        self.master.drawscreen()
 
 
 #end nocover
@@ -224,10 +251,19 @@ class ConsoleState(flow.State):
     def __init__(self):
         flow.State.__init__(self)
         self.focus = None
-        self.view_body_mode = common.VIEW_BODY_PRETTY
+        self.default_body_view = contentview.VIEW_AUTO
         self.view_flow_mode = common.VIEW_FLOW_REQUEST
         self.last_script = ""
         self.last_saveload = ""
+        self.flowsettings = weakref.WeakKeyDictionary()
+
+    def add_flow_setting(self, flow, key, value):
+        d = self.flowsettings.setdefault(flow, {})
+        d[key] = value
+
+    def get_flow_setting(self, flow, key, default=None):
+        d = self.flowsettings.get(flow, {})
+        return d.get(key, default)
 
     def add_request(self, req):
         f = flow.State.add_request(self, req)
@@ -291,12 +327,14 @@ class Options(object):
         "refresh_server_playback",
         "rfile",
         "script",
+        "replacements",
         "rheaders",
         "server_replay",
         "stickycookie",
         "stickyauth",
         "verbosity",
         "wfile",
+        "nopop",
     ]
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
@@ -311,23 +349,15 @@ class Options(object):
 
 class ConsoleMaster(flow.FlowMaster):
     palette = []
-    footer_text_default = [
-        ('heading_key', "?"), ":help ",
-    ]
-    footer_text_help = [
-        ("heading", 'mitmproxy v%s '%version.VERSION),
-        ('heading_key', "q"), ":back ",
-    ]
-    footer_text_flowview = [
-        ('heading_key', "?"), ":help ",
-        ('heading_key', "q"), ":back ",
-    ]
     def __init__(self, server, options):
         flow.FlowMaster.__init__(self, server, ConsoleState())
         self.looptime = 0
         self.options = options
 
-        self.flow_list_view = None
+        for i in options.replacements:
+            self.replacehooks.add(*i)
+
+        self.flow_list_walker = None
         self.set_palette()
 
         r = self.set_intercept(options.intercept)
@@ -350,6 +380,7 @@ class ConsoleMaster(flow.FlowMaster):
         self.anticomp = options.anticomp
         self.killextra = options.kill
         self.rheaders = options.rheaders
+        self.nopop = options.nopop
 
         self.eventlog = options.eventlog
         self.eventlist = urwid.SimpleListWalker([])
@@ -422,7 +453,7 @@ class ConsoleMaster(flow.FlowMaster):
             self.start_server_playback(
                 ret,
                 self.killextra, self.rheaders,
-                False
+                False, self.nopop
             )
 
     def spawn_editor(self, data):
@@ -482,7 +513,7 @@ class ConsoleMaster(flow.FlowMaster):
         self.ui = urwid.raw_display.Screen()
         self.ui.set_terminal_properties(256)
         self.ui.register_palette(self.palette)
-        self.flow_list_view = flowlist.ConnectionListView(self, self.state)
+        self.flow_list_walker = flowlist.FlowListWalker(self, self.state)
 
         self.view = None
         self.statusbar = None
@@ -495,9 +526,7 @@ class ConsoleMaster(flow.FlowMaster):
 
         self.view_flowlist()
 
-        if self.server:
-            slave = controller.Slave(self.masterq, self.server)
-            slave.start()
+        self.server.start_slave(controller.Slave, self.masterq)
 
         if self.options.rfile:
             ret = self.load_flows(self.options.rfile)
@@ -515,7 +544,7 @@ class ConsoleMaster(flow.FlowMaster):
     def focus_current(self):
         if self.currentflow:
             try:
-                self.flow_list_view.set_focus(self.state.index(self.currentflow))
+                self.flow_list_walker.set_focus(self.state.index(self.currentflow))
             except (IndexError, ValueError):
                 pass
 
@@ -529,16 +558,23 @@ class ConsoleMaster(flow.FlowMaster):
 
     def view_help(self):
         h = help.HelpView(self, self.help_context, (self.statusbar, self.body, self.header))
-        self.statusbar = StatusBar(self, self.footer_text_help)
+        self.statusbar = StatusBar(self, help.footer)
         self.body = h
         self.header = None
         self.make_view()
 
-    def view_kveditor(self, title, value, callback, *args, **kwargs):
-        self.body = kveditor.KVEditor(self, title, value, callback, *args, **kwargs)
+    def view_flowdetails(self, flow):
+        h = flowdetailview.FlowDetailsView(self, flow, (self.statusbar, self.body, self.header))
+        self.statusbar = StatusBar(self, flowdetailview.footer)
+        self.body = h
         self.header = None
-        self.help_context = kveditor.help_context
-        self.statusbar = StatusBar(self, self.footer_text_help)
+        self.make_view()
+
+    def view_grideditor(self, ge):
+        self.body = ge
+        self.header = None
+        self.help_context = grideditor.help_context
+        self.statusbar = StatusBar(self, grideditor.footer)
         self.make_view()
 
     def view_flowlist(self):
@@ -548,8 +584,8 @@ class ConsoleMaster(flow.FlowMaster):
         if self.eventlog:
             self.body = flowlist.BodyPile(self)
         else:
-            self.body = flowlist.ConnectionListBox(self)
-        self.statusbar = StatusBar(self, self.footer_text_default)
+            self.body = flowlist.FlowListBox(self)
+        self.statusbar = StatusBar(self, flowlist.footer)
         self.header = None
         self.currentflow = None
 
@@ -557,9 +593,9 @@ class ConsoleMaster(flow.FlowMaster):
         self.help_context = flowlist.help_context
 
     def view_flow(self, flow):
-        self.body = flowview.ConnectionView(self, self.state, flow)
-        self.header = flowview.ConnectionViewHeader(self, flow)
-        self.statusbar = StatusBar(self, self.footer_text_flowview)
+        self.body = flowview.FlowView(self, self.state, flow)
+        self.header = flowview.FlowViewHeader(self, flow)
+        self.statusbar = StatusBar(self, flowview.footer)
         self.currentflow = flow
 
         self.make_view()
@@ -604,7 +640,7 @@ class ConsoleMaster(flow.FlowMaster):
         except flow.FlowReadError, v:
             return v.strerror
         f.close()
-        if self.flow_list_view:
+        if self.flow_list_walker:
             self.sync_list_view()
             self.focus_current()
 
@@ -661,10 +697,18 @@ class ConsoleMaster(flow.FlowMaster):
         self.state.accept_all()
 
     def set_limit(self, txt):
-        return self.state.set_limit(txt)
+        v = self.state.set_limit(txt)
+        self.sync_list_view()
+        return v
 
     def set_intercept(self, txt):
         return self.state.set_intercept(txt)
+
+    def change_default_display_mode(self, t):
+        v = contentview.VIEW_SHORTCUTS.get(t)
+        self.state.default_body_view = v
+        if self.currentflow:
+            self.refresh_flow(self.currentflow)
 
     def set_reverse_proxy(self, txt):
         if not txt:
@@ -674,15 +718,6 @@ class ConsoleMaster(flow.FlowMaster):
             if not s:
                 return "Invalid reverse proxy specification"
             self.server.config.reverse_proxy = s
-
-    def changeview(self, v):
-        if v == "r":
-            self.state.view_body_mode = common.VIEW_BODY_RAW
-        elif v == "h":
-            self.state.view_body_mode = common.VIEW_BODY_HEX
-        elif v == "p":
-            self.state.view_body_mode = common.VIEW_BODY_PRETTY
-        self.refresh_flow(self.currentflow)
 
     def drawscreen(self):
         size = self.ui.get_cols_rows()
@@ -695,6 +730,11 @@ class ConsoleMaster(flow.FlowMaster):
             self.view_flow(self.currentflow)
         else:
             self.view_flowlist()
+
+    def set_replace(self, r):
+        self.replacehooks.clear()
+        for i in r:
+            self.replacehooks.add(*i)
 
     def loop(self):
         changed = True
@@ -750,7 +790,6 @@ class ConsoleMaster(flow.FlowMaster):
                                     self.state.intercept_txt,
                                     self.set_intercept
                                 )
-                                self.sync_list_view()
                             elif k == "Q":
                                 raise Stop
                             elif k == "q":
@@ -762,7 +801,13 @@ class ConsoleMaster(flow.FlowMaster):
                                     ),
                                     self.quit,
                                 )
-                            elif k == "R":
+                            elif k == "M":
+                                self.prompt_onekey(
+                                    "Global default display mode",
+                                    contentview.VIEW_PROMPT,
+                                    self.change_default_display_mode
+                                )
+                            elif k == "P":
                                 if self.server.config.reverse_proxy:
                                     p = utils.unparse_url(*self.server.config.reverse_proxy)
                                 else:
@@ -772,7 +817,14 @@ class ConsoleMaster(flow.FlowMaster):
                                     p,
                                     self.set_reverse_proxy
                                 )
-                                self.sync_list_view()
+                            elif k == "R":
+                                self.view_grideditor(
+                                    grideditor.ReplaceEditor(
+                                        self,
+                                        self.replacehooks.get_specs(),
+                                        self.set_replace
+                                    )
+                                )
                             elif k == "s":
                                 if self.script:
                                     self.load_script(None)
@@ -806,6 +858,7 @@ class ConsoleMaster(flow.FlowMaster):
                                             ("anticomp", "c"),
                                             ("killextra", "k"),
                                             ("norefresh", "n"),
+                                            ("upstream-certs", "u"),
                                         ),
                                         self._change_options
                                 )
@@ -846,13 +899,15 @@ class ConsoleMaster(flow.FlowMaster):
             self.killextra = not self.killextra
         elif a == "n":
             self.refresh_server_playback = not self.refresh_server_playback
+        elif a == "u":
+            self.server.config.upstream_cert = not self.server.config.upstream_cert
 
     def shutdown(self):
         self.state.killall(self)
         controller.Master.shutdown(self)
 
     def sync_list_view(self):
-        self.flow_list_view._modified()
+        self.flow_list_walker._modified()
 
     def clear_flows(self):
         self.state.clear()
@@ -910,4 +965,3 @@ class ConsoleMaster(flow.FlowMaster):
         if f:
             self.process_flow(f, r)
         return f
-

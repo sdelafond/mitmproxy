@@ -13,10 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import os, re
+import os, sys
 import urwid
-import common
-from .. import utils, encoding, flow
+import common, grideditor, contentview
+from .. import utils, flow
 
 def _mkhelp():
     text = []
@@ -27,25 +27,48 @@ def _mkhelp():
         ("d", "delete flow"),
         ("D", "duplicate flow"),
         ("e", "edit request/response"),
-        ("m", "change body display mode"),
+        ("f", "load full body data"),
+        ("m", "change body display mode for this entity"),
+            (None,
+                common.highlight_key("automatic", "a") +
+                [("text", ": automatic detection")]
+            ),
+            (None,
+                common.highlight_key("hex", "h") +
+                [("text", ": Hex")]
+            ),
+            (None,
+                common.highlight_key("image", "i") +
+                [("text", ": Image")]
+            ),
+            (None,
+                common.highlight_key("javascript", "j") +
+                [("text", ": JavaScript")]
+            ),
+            (None,
+                common.highlight_key("json", "s") +
+                [("text", ": JSON")]
+            ),
+            (None,
+                common.highlight_key("urlencoded", "u") +
+                [("text", ": URL-encoded data")]
+            ),
             (None,
                 common.highlight_key("raw", "r") +
                 [("text", ": raw data")]
             ),
             (None,
-                common.highlight_key("pretty", "p") +
-                [("text", ": pretty-print XML, HTML and JSON")]
+                common.highlight_key("xml", "x") +
+                [("text", ": XML")]
             ),
-            (None,
-                common.highlight_key("hex", "h") +
-                [("text", ": hex dump")]
-            ),
+        ("M", "change default body display mode"),
         ("p", "previous flow"),
         ("r", "replay request"),
         ("V", "revert changes to request"),
         ("v", "view body in external viewer"),
         ("w", "save all flows matching current limit"),
         ("W", "save this flow"),
+        ("X", "view flow details"),
         ("z", "encode/decode a request/response"),
         ("tab", "toggle request/response view"),
         ("space", "next flow"),
@@ -55,10 +78,13 @@ def _mkhelp():
     return text
 help_context = _mkhelp()
 
+footer = [
+    ('heading_key', "?"), ":help ",
+    ('heading_key', "q"), ":back ",
+]
 
-VIEW_CUTOFF = 1024*100
 
-class ConnectionViewHeader(common.WWrap):
+class FlowViewHeader(common.WWrap):
     def __init__(self, master, f):
         self.master, self.flow = master, f
         self.w = common.format_flow(f, False, extended=True, padding=0)
@@ -69,13 +95,18 @@ class ConnectionViewHeader(common.WWrap):
 
 
 class CallbackCache:
-    @utils.LRUCache(20)
+    @utils.LRUCache(200)
+    def _callback(self, method, *args, **kwargs):
+        return getattr(self.obj, method)(*args, **kwargs)
+
     def callback(self, obj, method, *args, **kwargs):
-        return getattr(obj, method)(*args, **kwargs)
+        # obj varies!
+        self.obj = obj
+        return self._callback(method, *args, **kwargs)
 cache = CallbackCache()
 
 
-class ConnectionView(common.WWrap):
+class FlowView(common.WWrap):
     REQ = 0
     RESP = 1
     method_options = [
@@ -90,161 +121,67 @@ class ConnectionView(common.WWrap):
     ]
     def __init__(self, master, state, flow):
         self.master, self.state, self.flow = master, state, flow
-        if self.state.view_flow_mode == common.VIEW_FLOW_RESPONSE and flow.response:
+        if self.state.view_flow_mode == common.VIEW_FLOW_RESPONSE:
             self.view_response()
         else:
             self.view_request()
 
-    def _trailer(self, clen, txt):
-        rem = clen - VIEW_CUTOFF
-        if rem > 0:
-            txt.append(urwid.Text(""))
-            txt.append(
-                urwid.Text(
-                    [
-                        ("highlight", "... %s of data not shown"%utils.pretty_size(rem))
-                    ]
+    def _cached_content_view(self, viewmode, hdrItems, content, limit):
+        return contentview.get_content_view(viewmode, hdrItems, content, limit)
+
+    def content_view(self, viewmode, conn):
+        full = self.state.get_flow_setting(
+            self.flow,
+            (self.state.view_flow_mode, "fullcontents"),
+            False
+        )
+        if full:
+            limit = sys.maxint
+        else:
+            limit = contentview.VIEW_CUTOFF
+        return cache.callback(
+                    self, "_cached_content_view",
+                    viewmode,
+                    tuple(tuple(i) for i in conn.headers.lst),
+                    conn.content,
+                    limit
                 )
-            )
 
-    def _view_flow_raw(self, content):
-        txt = []
-        for i in utils.cleanBin(content[:VIEW_CUTOFF]).splitlines():
-            txt.append(
-                urwid.Text(("text", i))
-            )
-        self._trailer(len(content), txt)
-        return txt
-
-    def _view_flow_binary(self, content):
-        txt = []
-        for offset, hexa, s in utils.hexdump(content[:VIEW_CUTOFF]):
-            txt.append(urwid.Text([
-                ("offset", offset),
-                " ",
-                ("text", hexa),
-                "   ",
-                ("text", s),
-            ]))
-        self._trailer(len(content), txt)
-        return txt
-
-    def _view_flow_xmlish(self, content):
-        txt = []
-        for i in utils.pretty_xmlish(content[:VIEW_CUTOFF]):
-            txt.append(
-                urwid.Text(("text", i)),
-            )
-        self._trailer(len(content), txt)
-        return txt
-
-    def _view_flow_json(self, lines):
-        txt = []
-        sofar = 0
-        for i in lines:
-            sofar += len(i)
-            txt.append(
-                urwid.Text(("text", i)),
-            )
-            if sofar > VIEW_CUTOFF:
-                break
-        self._trailer(sum(len(i) for i in lines), txt)
-        return txt
-
-    def _view_flow_formdata(self, content, boundary):
-        rx = re.compile(r'\bname="([^"]+)"')
-        keys = []
-        vals = []
-
-        for i in content.split("--" + boundary):
-            parts = i.splitlines()
-            if len(parts) > 1 and parts[0][0:2] != "--":
-                match = rx.search(parts[1])
-                if match:
-                    keys.append(match.group(1) + ":")
-                    vals.append(utils.cleanBin(
-                        "\n".join(parts[3+parts[2:].index(""):])
-                    ))
-        r = [
-            urwid.Text(("highlight", "Form data:\n")),
-        ]
-        r.extend(common.format_keyvals(
-            zip(keys, vals),
-            key = "header",
-            val = "text"
-        ))
-        return r
-
-    def _view_flow_urlencoded(self, lines):
-        return common.format_keyvals(
-                    [(k+":", v) for (k, v) in lines],
-                    key = "header",
-                    val = "text"
-               )
-
-
-    def _find_pretty_view(self, content, hdrItems):
-        ctype = None
-        for i in hdrItems:
-            if i[0].lower() == "content-type":
-                ctype = i[1]
-                break
-        if ctype and flow.HDR_FORM_URLENCODED in ctype:
-            data = utils.urldecode(content)
-            if data:
-                return "URLEncoded form", self._view_flow_urlencoded(data)
-        if utils.isXML(content):
-            return "Indented XML-ish", self._view_flow_xmlish(content)
-        elif ctype and "application/json" in ctype:
-            lines = utils.pretty_json(content)
-            if lines:
-                return "JSON", self._view_flow_json(lines)
-        elif ctype and "multipart/form-data" in ctype:
-            boundary = ctype.split('boundary=')
-            if len(boundary) > 1:
-                return "Form data", self._view_flow_formdata(content, boundary[1].split(';')[0])
-        return "", self._view_flow_raw(content)
-
-    def _cached_conn_text(self, e, content, hdrItems, viewmode):
+    def conn_text(self, conn):
         txt = common.format_keyvals(
-                [(h+":", v) for (h, v) in hdrItems],
+                [(h+":", v) for (h, v) in conn.headers.lst],
                 key = "header",
                 val = "text"
             )
-        if content:
-            msg = ""
-            if viewmode == common.VIEW_BODY_HEX:
-                body = self._view_flow_binary(content)
-            elif viewmode == common.VIEW_BODY_PRETTY:
-                emsg = ""
-                if e:
-                    decoded = encoding.decode(e, content)
-                    if decoded:
-                        content = decoded
-                        if e and e != "identity":
-                            emsg = "[decoded %s]"%e
-                msg, body = self._find_pretty_view(content, hdrItems)
-                if emsg:
-                    msg = emsg + " " + msg
-            else:
-                body = self._view_flow_raw(content)
+        if conn.content:
+            override = self.state.get_flow_setting(
+                self.flow,
+                (self.state.view_flow_mode, "prettyview"),
+            )
+            viewmode = self.state.default_body_view if override is None else override
 
-            title = urwid.AttrWrap(urwid.Columns([
+            msg, body = self.content_view(viewmode, conn)
+
+            cols = [
                 urwid.Text(
                     [
                         ("heading", msg),
                     ]
-                ),
-                urwid.Text(
-                    [
-                        " ",
-                        ('heading', "["),
-                        ('heading_key', "m"),
-                        ('heading', (":%s]"%common.BODY_VIEWS[self.master.state.view_body_mode])),
-                    ],
-                    align="right"
-                ),
-            ]), "heading")
+                )
+            ]
+            if override is not None:
+                cols.append(
+                    urwid.Text(
+                        [
+                            " ",
+                            ('heading', "["),
+                            ('heading_key', "m"),
+                            ('heading', (":%s]"%contentview.VIEW_NAMES[viewmode])),
+                        ],
+                        align="right"
+                    )
+                )
+            title = urwid.AttrWrap(urwid.Columns(cols), "heading")
             txt.append(title)
             txt.extend(body)
         return urwid.ListBox(txt)
@@ -283,33 +220,16 @@ class ConnectionView(common.WWrap):
                 )
         return f
 
-    def _conn_text(self, conn, viewmode):
-        e = conn.headers["content-encoding"]
-        e = e[0] if e else None
-        return cache.callback(
-                    self, "_cached_conn_text",
-                    e,
-                    conn.content,
-                    tuple(tuple(i) for i in conn.headers.lst),
-                    viewmode
-                )
-
     def view_request(self):
         self.state.view_flow_mode = common.VIEW_FLOW_REQUEST
-        body = self._conn_text(
-            self.flow.request,
-            self.state.view_body_mode
-        )
+        body = self.conn_text(self.flow.request)
         self.w = self.wrap_body(common.VIEW_FLOW_REQUEST, body)
         self.master.statusbar.redraw()
 
     def view_response(self):
         self.state.view_flow_mode = common.VIEW_FLOW_RESPONSE
         if self.flow.response:
-            body = self._conn_text(
-                self.flow.response,
-                self.state.view_body_mode
-            )
+            body = self.conn_text(self.flow.response)
         else:
             body = urwid.ListBox(
                         [
@@ -386,7 +306,7 @@ class ConnectionView(common.WWrap):
         self.master.refresh_flow(self.flow)
 
     def set_headers(self, lst, conn):
-        conn.headers = flow.ODict(lst)
+        conn.headers = flow.ODictCaseless(lst)
 
     def set_query(self, lst, conn):
         conn.set_query(flow.ODict(lst))
@@ -395,7 +315,9 @@ class ConnectionView(common.WWrap):
         conn.set_form_urlencoded(flow.ODict(lst))
 
     def edit_form(self, conn):
-        self.master.view_kveditor("Editing form", conn.get_form_urlencoded().lst, self.set_form, conn)
+        self.master.view_grideditor(
+            grideditor.URLEncodedFormEditor(self.master, conn.get_form_urlencoded().lst, self.set_form, conn)
+        )
 
     def edit_form_confirm(self, key, conn):
         if key == "y":
@@ -406,7 +328,7 @@ class ConnectionView(common.WWrap):
             conn = self.flow.request
         else:
             if not self.flow.response:
-                self.flow.response = flow.Response(self.flow.request, 200, "OK", flow.ODict(), "")
+                self.flow.response = flow.Response(self.flow.request, 200, "OK", flow.ODictCaseless(), "")
             conn = self.flow.response
 
         self.flow.backup()
@@ -427,9 +349,9 @@ class ConnectionView(common.WWrap):
             else:
                 self.edit_form(conn)
         elif part == "h":
-            self.master.view_kveditor("Editing headers", conn.headers.lst, self.set_headers, conn)
+            self.master.view_grideditor(grideditor.HeaderEditor(self.master, conn.headers.lst, self.set_headers, conn))
         elif part == "q":
-            self.master.view_kveditor("Editing query", conn.get_query().lst, self.set_query, conn)
+            self.master.view_grideditor(grideditor.QueryEditor(self.master, conn.get_query().lst, self.set_query, conn))
         elif part == "u" and self.state.view_flow_mode == common.VIEW_FLOW_REQUEST:
             self.master.prompt_edit("URL", conn.get_url(), self.set_url)
         elif part == "m" and self.state.view_flow_mode == common.VIEW_FLOW_REQUEST:
@@ -450,6 +372,7 @@ class ConnectionView(common.WWrap):
         else:
             new_flow, new_idx = self.state.get_prev(idx)
         if new_idx is None:
+            self.master.statusbar.message("No more flows!")
             return
         self.master.view_flow(new_flow)
 
@@ -459,10 +382,18 @@ class ConnectionView(common.WWrap):
     def view_prev_flow(self, flow):
         return self._view_nextprev_flow("prev", flow)
 
+    def change_this_display_mode(self, t):
+        self.state.add_flow_setting(
+            self.flow,
+            (self.state.view_flow_mode, "prettyview"),
+            contentview.VIEW_SHORTCUTS.get(t)
+        )
+        self.master.refresh_flow(self.flow)
+
     def keypress(self, size, key):
         if key == " ":
             self.view_next_flow(self.flow)
-            return key
+            return
 
         key = common.shortcuts(key)
         if self.state.view_flow_mode == common.VIEW_FLOW_REQUEST:
@@ -487,6 +418,20 @@ class ConnectionView(common.WWrap):
         elif key == "A":
             self.master.accept_all()
             self.master.view_flow(self.flow)
+        elif key == "b":
+            if conn:
+                if self.state.view_flow_mode == common.VIEW_FLOW_REQUEST:
+                    self.master.path_prompt(
+                        "Save request body: ",
+                        self.state.last_saveload,
+                        self.save_body
+                    )
+                else:
+                    self.master.path_prompt(
+                        "Save response body: ",
+                        self.state.last_saveload,
+                        self.save_body
+                    )
         elif key == "d":
             if self.state.flow_count() == 1:
                 self.master.view_flowlist()
@@ -528,27 +473,39 @@ class ConnectionView(common.WWrap):
                     self.edit
                 )
             key = None
+        elif key == "f":
+            self.master.statusbar.message("Loading all body data...")
+            self.state.add_flow_setting(
+                self.flow,
+                (self.state.view_flow_mode, "fullcontents"),
+                True
+            )
+            self.master.refresh_flow(self.flow)
+            self.master.statusbar.message("")
         elif key == "m":
+            p = list(contentview.VIEW_PROMPT)
+            p.insert(0, ("clear", "c"))
             self.master.prompt_onekey(
-                "View",
-                (
-                    ("raw", "r"),
-                    ("pretty", "p"),
-                    ("hex", "h"),
-                ),
-                self.master.changeview
+                "Display mode",
+                p,
+                self.change_this_display_mode
             )
             key = None
         elif key == "p":
             self.view_prev_flow(self.flow)
         elif key == "r":
+            self.flow.backup()
             r = self.master.replay_request(self.flow)
             if r:
                 self.master.statusbar.message(r)
             self.master.refresh_flow(self.flow)
         elif key == "V":
+            if not self.flow.modified():
+                self.master.statusbar.message("Flow not modified.")
+                return
             self.state.revert(self.flow)
             self.master.refresh_flow(self.flow)
+            self.master.statusbar.message("Reverted.")
         elif key == "W":
             self.master.path_prompt(
                 "Save this flow: ",
@@ -561,27 +518,16 @@ class ConnectionView(common.WWrap):
                 t = conn.headers["content-type"] or [None]
                 t = t[0]
                 self.master.spawn_external_viewer(conn.content, t)
-        elif key == "b":
-            if conn:
-                if self.state.view_flow_mode == common.VIEW_FLOW_REQUEST:
-                    self.master.path_prompt(
-                        "Save request body: ",
-                        self.state.last_saveload,
-                        self.save_body
-                    )
-                else:
-                    self.master.path_prompt(
-                        "Save response body: ",
-                        self.state.last_saveload,
-                        self.save_body
-                    )
         elif key == "|":
             self.master.path_prompt(
                 "Send flow to script: ", self.state.last_script,
                 self.master.run_script_once, self.flow
             )
+        elif key == "X":
+            self.master.view_flowdetails(self.flow)
         elif key == "z":
             if conn:
+                self.flow.backup()
                 e = conn.headers["content-encoding"] or ["identity"]
                 if e[0] != "identity":
                     conn.decode()

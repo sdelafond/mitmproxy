@@ -21,9 +21,66 @@ import hashlib, Cookie, cookielib, copy, re, urlparse
 import time
 import tnetstring, filt, script, utils, encoding, proxy
 from email.utils import parsedate_tz, formatdate, mktime_tz
-import controller, version
+import controller, version, certutils
 
 HDR_FORM_URLENCODED = "application/x-www-form-urlencoded"
+
+
+class ReplaceHooks:
+    def __init__(self):
+        self.lst = []
+
+    def add(self, fpatt, rex, s):
+        """
+            Add a replacement hook.
+
+            fpatt: A string specifying a filter pattern.
+            rex: A regular expression.
+            s: The replacement string
+
+            Returns True if hook was added, False if the pattern could not be
+            parsed.
+        """
+        cpatt = filt.parse(fpatt)
+        if not cpatt:
+            return False
+        try:
+            re.compile(rex)
+        except re.error:
+            return False
+        self.lst.append((fpatt, rex, s, cpatt))
+        return True
+
+    def remove(self, fpatt, rex, s):
+        """
+            Remove a hook.
+
+            patt: A string specifying a filter pattern.
+            func: Optional callable. If not specified, all hooks matching patt are removed.
+        """
+        for i in range(len(self.lst)-1, -1, -1):
+            if (fpatt, rex, s) == self.lst[i][:3]:
+                del self.lst[i]
+
+    def get_specs(self):
+        """
+            Retrieve the hook specifcations. Returns a list of (fpatt, rex, s) tuples.
+        """
+        return [i[:3] for i in self.lst]
+
+    def count(self):
+        return len(self.lst)
+
+    def run(self, f):
+        for _, rex, s, cpatt in self.lst:
+            if cpatt(f):
+                if f.response:
+                    f.response.replace(rex, s)
+                else:
+                    f.request.replace(rex, s)
+
+    def clear(self):
+        self.lst = []
 
 
 class ScriptContext:
@@ -75,7 +132,6 @@ class ODict:
     def __getitem__(self, k):
         """
             Returns a list of values matching key.
-
         """
         ret = []
         k = self._kconv(k)
@@ -124,6 +180,12 @@ class ODict:
 
     def add(self, key, value):
         self.lst.append([key, str(value)])
+
+    def get(self, k, d=None):
+        if k in self:
+            return self[k]
+        else:
+            return d
 
     def _get_state(self):
         return [tuple(i) for i in self.lst]
@@ -176,8 +238,11 @@ class ODict:
 
     def replace(self, pattern, repl, *args, **kwargs):
         """
-            Replaces a regular expression pattern with repl in both keys
-            and values. Returns the number of replacements made.
+            Replaces a regular expression pattern with repl in both keys and
+            values. Encoded content will be decoded before replacement, and
+            re-encoded afterwards.
+
+            Returns the number of replacements made.
         """
         nlst, count = [], 0
         for i in self.lst:
@@ -197,6 +262,34 @@ class ODictCaseless(ODict):
     """
     def _kconv(self, s):
         return s.lower()
+
+
+class decoded(object):
+    """
+
+        A context manager that decodes a request, response or error, and then
+        re-encodes it with the same encoding after execution of the block.
+
+        Example:
+
+        with decoded(request):
+            request.content = request.content.replace("foo", "bar")
+    """
+    def __init__(self, o):
+        self.o = o
+        ce = o.headers["content-encoding"]
+        if ce and ce[0] in encoding.ENCODINGS:
+            self.ce = ce[0]
+        else:
+            self.ce = None
+
+    def __enter__(self):
+        if self.ce:
+            self.o.decode()
+
+    def __exit__(self, type, value, tb):
+        if self.ce:
+            self.o.encode(self.ce)
 
 
 class HTTPMsg(controller.Msg):
@@ -231,7 +324,7 @@ class Request(HTTPMsg):
 
         Exposes the following attributes:
 
-            client_conn: ClientConnection object, or None if this is a replay.
+            client_conn: ClientConnect object, or None if this is a replay.
             headers: ODictCaseless object
             content: Content of the request, or None
 
@@ -447,10 +540,13 @@ class Request(HTTPMsg):
     def replace(self, pattern, repl, *args, **kwargs):
         """
             Replaces a regular expression pattern with repl in both the headers
-            and the body of the request. Returns the number of replacements
-            made.
+            and the body of the request. Encoded content will be decoded before
+            replacement, and re-encoded afterwards.
+
+            Returns the number of replacements made.
         """
-        self.content, c = re.subn(pattern, repl, self.content, *args, **kwargs)
+        with decoded(self):
+            self.content, c = re.subn(pattern, repl, self.content, *args, **kwargs)
         self.path, pc = re.subn(pattern, repl, self.path, *args, **kwargs)
         c += pc
         c += self.headers.replace(pattern, repl, *args, **kwargs)
@@ -470,11 +566,12 @@ class Response(HTTPMsg):
             content: Response content
             timestamp: Seconds since the epoch
     """
-    def __init__(self, request, code, msg, headers, content, timestamp=None):
+    def __init__(self, request, code, msg, headers, content, der_cert, timestamp=None):
         assert isinstance(headers, ODictCaseless)
         self.request = request
         self.code, self.msg = code, msg
         self.headers, self.content = headers, content
+        self.der_cert = der_cert
         self.timestamp = timestamp or utils.timestamp()
         controller.Msg.__init__(self)
         self.replay = False
@@ -544,6 +641,14 @@ class Response(HTTPMsg):
         self.headers = ODictCaseless._from_state(state["headers"])
         self.content = state["content"]
         self.timestamp = state["timestamp"]
+        self.der_cert = state["der_cert"]
+
+    def get_cert(self):
+        """
+            Returns a certutils.SSLCert object, or None.
+        """
+        if self.der_cert:
+            return certutils.SSLCert.from_der(self.der_cert)
 
     def _get_state(self):
         return dict(
@@ -551,6 +656,7 @@ class Response(HTTPMsg):
             msg = self.msg,
             headers = self.headers._get_state(),
             timestamp = self.timestamp,
+            der_cert = self.der_cert,
             content = self.content
         )
 
@@ -562,6 +668,7 @@ class Response(HTTPMsg):
             str(state["msg"]),
             ODictCaseless._from_state(state["headers"]),
             state["content"],
+            state.get("der_cert"),
             state["timestamp"],
         )
 
@@ -602,10 +709,13 @@ class Response(HTTPMsg):
     def replace(self, pattern, repl, *args, **kwargs):
         """
             Replaces a regular expression pattern with repl in both the headers
-            and the body of the response. Returns the number of replacements
-            made.
+            and the body of the response. Encoded content will be decoded
+            before replacement, and re-encoded afterwards.
+
+            Returns the number of replacements made.
         """
-        self.content, c = re.subn(pattern, repl, self.content, *args, **kwargs)
+        with decoded(self):
+            self.content, c = re.subn(pattern, repl, self.content, *args, **kwargs)
         c += self.headers.replace(pattern, repl, *args, **kwargs)
         return c
 
@@ -650,15 +760,21 @@ class ClientConnect(controller.Msg):
         return self._get_state() == other._get_state()
 
     def _load_state(self, state):
-        self.address = state
+        self.close = True
+        self.requestcount = state["requestcount"]
 
     def _get_state(self):
-        return list(self.address) if self.address else None
+        return dict(
+            address = list(self.address),
+            requestcount = self.requestcount,
+        )
 
     @classmethod
     def _from_state(klass, state):
         if state:
-            return klass(state)
+            k = klass(state["address"])
+            k._load_state(state)
+            return k
         else:
             return None
 
@@ -725,6 +841,8 @@ class Error(controller.Msg):
             Replaces a regular expression pattern with repl in both the headers
             and the body of the request. Returns the number of replacements
             made.
+
+            FIXME: Is replace useful on an Error object??
         """
         self.msg, c = re.subn(pattern, repl, self.msg, *args, **kwargs)
         return c
@@ -768,12 +886,12 @@ class ClientPlaybackState:
 
 
 class ServerPlaybackState:
-    def __init__(self, headers, flows, exit):
+    def __init__(self, headers, flows, exit, nopop):
         """
             headers: Case-insensitive list of request headers that should be
             included in request-response matching.
         """
-        self.headers, self.exit = headers, exit
+        self.headers, self.exit, self.nopop = headers, exit, nopop
         self.fmap = {}
         for i in flows:
             if i.response:
@@ -815,7 +933,12 @@ class ServerPlaybackState:
         l = self.fmap.get(self._hash(request))
         if not l:
             return None
-        return l.pop(0)
+
+        if self.nopop:
+            return l[0]
+        else:
+            return l.pop(0)
+
 
 
 class StickyCookieState:
@@ -925,21 +1048,16 @@ class Flow:
         f._load_state(state)
         return f
 
-    def _get_state(self, nobackup=False):
+    def _get_state(self):
         d = dict(
             request = self.request._get_state() if self.request else None,
             response = self.response._get_state() if self.response else None,
             error = self.error._get_state() if self.error else None,
             version = version.IVERSION
         )
-        if nobackup:
-            d["backup"] = None
-        else:
-            d["backup"] = self._backup
         return d
 
     def _load_state(self, state):
-        self._backup = state["backup"]
         if self.request:
             self.request._load_state(state["request"])
         else:
@@ -972,12 +1090,13 @@ class Flow:
         else:
             return False
 
-    def backup(self):
+    def backup(self, force=False):
         """
             Save a backup of this Flow, which can be reverted to using a
             call to .revert().
         """
-        self._backup = self._get_state(nobackup=True)
+        if not self._backup:
+            self._backup = self._get_state()
 
     def revert(self):
         """
@@ -1029,7 +1148,10 @@ class Flow:
     def replace(self, pattern, repl, *args, **kwargs):
         """
             Replaces a regular expression pattern with repl in all parts of the
-            flow . Returns the number of replacements made.
+            flow. Encoded content will be decoded before replacement, and
+            re-encoded afterwards.
+
+            Returns the number of replacements made.
         """
         c = self.request.replace(pattern, repl, *args, **kwargs)
         if self.response:
@@ -1182,6 +1304,7 @@ class FlowMaster(controller.Master):
         self.anticache = False
         self.anticomp = False
         self.refresh_server_playback = False
+        self.replacehooks = ReplaceHooks()
 
     def add_event(self, e, level="info"):
         """
@@ -1251,12 +1374,12 @@ class FlowMaster(controller.Master):
     def stop_client_playback(self):
         self.client_playback = None
 
-    def start_server_playback(self, flows, kill, headers, exit):
+    def start_server_playback(self, flows, kill, headers, exit, nopop):
         """
             flows: List of flows.
             kill: Boolean, should we kill requests not part of the replay?
         """
-        self.server_playback = ServerPlaybackState(headers, flows, exit)
+        self.server_playback = ServerPlaybackState(headers, flows, exit, nopop)
         self.kill_nonreplay = kill
 
     def stop_server_playback(self):
@@ -1391,6 +1514,7 @@ class FlowMaster(controller.Master):
 
     def handle_error(self, r):
         f = self.state.add_error(r)
+        self.replacehooks.run(f)
         if f:
             self.run_script_hook("error", f)
         if self.client_playback:
@@ -1400,12 +1524,14 @@ class FlowMaster(controller.Master):
 
     def handle_request(self, r):
         f = self.state.add_request(r)
+        self.replacehooks.run(f)
         self.run_script_hook("request", f)
         self.process_new_request(f)
         return f
 
     def handle_response(self, r):
         f = self.state.add_response(r)
+        self.replacehooks.run(f)
         if f:
             self.run_script_hook("response", f)
         if self.client_playback:
