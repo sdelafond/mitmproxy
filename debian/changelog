@@ -1,3 +1,11 @@
+mitmproxy (0.8-1) unstable; urgency=low
+
+  * Imported Upstream version 0.8
+  * Bumped up Standards-Version
+  * Added new upstream dependencies
+
+ -- Sebastien Delafond <seb@debian.org>  Thu, 19 Apr 2012 11:24:19 +0200
+
 mitmproxy (0.7-1) unstable; urgency=low
 
   * Imported Upstream version 0.7
