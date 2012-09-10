@@ -1,3 +1,9 @@
+mitmproxy (0.8-2) unstable; urgency=low
+
+  * Added missing dependency on python-lxml (Closes: #687056)
+
+ -- Sebastien Delafond <seb@debian.org>  Mon, 10 Sep 2012 11:10:13 +0200
+
 mitmproxy (0.8-1) unstable; urgency=low
 
   * Imported Upstream version 0.8
