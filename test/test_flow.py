@@ -1,12 +1,11 @@
-import Queue, time
+import Queue, time, os.path
 from cStringIO import StringIO
 import email.utils
-from libmproxy import filt, flow, controller, utils
+from libmproxy import filt, flow, controller, utils, tnetstring
 import tutils
-import libpry
 
 
-class uStickyCookieState(libpry.AutoTree):
+class TestStickyCookieState:
     def _response(self, cookie, host):
         s = flow.StickyCookieState(filt.parse(".*"))
         f = tutils.tflow_full()
@@ -40,7 +39,7 @@ class uStickyCookieState(libpry.AutoTree):
         assert "cookie" in f.request.headers
 
 
-class uStickyAuthState(libpry.AutoTree):
+class TestStickyAuthState:
     def test_handle_response(self):
         s = flow.StickyAuthState(filt.parse(".*"))
         f = tutils.tflow_full()
@@ -53,7 +52,7 @@ class uStickyAuthState(libpry.AutoTree):
         assert f.request.headers["authorization"] == ["foo"]
 
 
-class uClientPlaybackState(libpry.AutoTree):
+class TestClientPlaybackState:
     def test_tick(self):
         first = tutils.tflow()
         s = flow.State()
@@ -85,7 +84,7 @@ class uClientPlaybackState(libpry.AutoTree):
         assert not fm.client_playback
 
 
-class uServerPlaybackState(libpry.AutoTree):
+class TestServerPlaybackState:
     def test_hash(self):
         s = flow.ServerPlaybackState(None, [], False, False)
         r = tutils.tflow()
@@ -144,10 +143,11 @@ class uServerPlaybackState(libpry.AutoTree):
         s = flow.ServerPlaybackState(None, [r, r2], False, True)
 
         assert s.count() == 2
-        n = s.next_flow(r)
+        s.next_flow(r)
         assert s.count() == 2
 
-class uFlow(libpry.AutoTree):
+
+class TestFlow:
     def test_copy(self):
         f = tutils.tflow_full()
         f2 = f.copy()
@@ -171,12 +171,15 @@ class uFlow(libpry.AutoTree):
         f = tutils.tflow()
         f.response = tutils.tresp()
         f.request = f.response.request
-        assert not f.match(filt.parse("~b test"))
+        assert not f.match("~b test")
         assert f.match(None)
-        assert not f.match(filt.parse("~b test"))
+        assert not f.match("~b test")
 
         f = tutils.tflow_err()
-        assert f.match(filt.parse("~e"))
+        assert f.match("~e")
+
+        tutils.raises(ValueError, f.match, "~")
+
 
     def test_backup(self):
         f = tutils.tflow()
@@ -189,6 +192,13 @@ class uFlow(libpry.AutoTree):
         assert f.modified()
         f.revert()
         assert f.request.content == "foo"
+
+    def test_backup_idempotence(self):
+        f = tutils.tflow_full()
+        f.backup()
+        f.revert()
+        f.backup()
+        f.revert()
 
     def test_getset_state(self):
         f = tutils.tflow()
@@ -213,16 +223,16 @@ class uFlow(libpry.AutoTree):
         f = tutils.tflow()
         f.request = tutils.treq()
         f.intercept()
-        assert not f.request.acked
+        assert not f.request.reply.acked
         f.kill(fm)
-        assert f.request.acked
+        assert f.request.reply.acked
         f.intercept()
         f.response = tutils.tresp()
         f.request = f.response.request
-        f.request._ack()
-        assert not f.response.acked
+        f.request.reply()
+        assert not f.response.reply.acked
         f.kill(fm)
-        assert f.response.acked
+        assert f.response.reply.acked
 
     def test_killall(self):
         s = flow.State()
@@ -235,29 +245,34 @@ class uFlow(libpry.AutoTree):
         fm.handle_request(r)
 
         for i in s.view:
-            assert not i.request.acked
+            assert not i.request.reply.acked
         s.killall(fm)
         for i in s.view:
-            assert i.request.acked
+            assert i.request.reply.acked
 
     def test_accept_intercept(self):
         f = tutils.tflow()
         f.request = tutils.treq()
         f.intercept()
-        assert not f.request.acked
+        assert not f.request.reply.acked
         f.accept_intercept()
-        assert f.request.acked
+        assert f.request.reply.acked
         f.response = tutils.tresp()
         f.request = f.response.request
         f.intercept()
-        f.request._ack()
-        assert not f.response.acked
+        f.request.reply()
+        assert not f.response.reply.acked
         f.accept_intercept()
-        assert f.response.acked
+        assert f.response.reply.acked
 
     def test_serialization(self):
         f = flow.Flow(None)
         f.request = tutils.treq()
+
+    def test_replace_unicode(self):
+        f = tutils.tflow_full()
+        f.response.content = "\xc2foo"
+        f.replace("foo", u"bar")
 
     def test_replace(self):
         f = tutils.tflow_full()
@@ -297,7 +312,7 @@ class uFlow(libpry.AutoTree):
 
 
 
-class uState(libpry.AutoTree):
+class TestState:
     def test_backup(self):
         c = flow.State()
         req = tutils.treq()
@@ -446,7 +461,7 @@ class uState(libpry.AutoTree):
         c.accept_all()
 
 
-class uSerialize(libpry.AutoTree):
+class TestSerialize:
     def _treader(self):
         sio = StringIO()
         w = flow.FlowWriter(sio)
@@ -483,32 +498,70 @@ class uSerialize(libpry.AutoTree):
         fm.load_flows(r)
         assert len(s._flow_list) == 6
 
+    def test_filter(self):
+        sio = StringIO()
+        fl = filt.parse("~c 200")
+        w = flow.FilteredFlowWriter(sio, fl)
+
+        f = tutils.tflow_full()
+        f.response.code = 200
+        w.add(f)
+
+        f = tutils.tflow_full()
+        f.response.code = 201
+        w.add(f)
+
+        sio.seek(0)
+        r = flow.FlowReader(sio)
+        assert len(list(r.stream()))
+
 
     def test_error(self):
         sio = StringIO()
         sio.write("bogus")
         sio.seek(0)
         r = flow.FlowReader(sio)
-        libpry.raises(flow.FlowReadError, list, r.stream())
+        tutils.raises(flow.FlowReadError, list, r.stream())
 
         f = flow.FlowReadError("foo")
         assert f.strerror == "foo"
 
+    def test_versioncheck(self):
+        f = tutils.tflow()
+        d = f._get_state()
+        d["version"] = (0, 0)
+        sio = StringIO()
+        tnetstring.dump(d, sio)
+        sio.seek(0)
 
-class uFlowMaster(libpry.AutoTree):
+        r = flow.FlowReader(sio)
+        tutils.raises("version", list, r.stream())
+
+
+class TestFlowMaster:
     def test_load_script(self):
         s = flow.State()
         fm = flow.FlowMaster(None, s)
-        assert not fm.load_script("scripts/a.py")
-        assert not fm.load_script("scripts/a.py")
+        assert not fm.load_script(tutils.test_data.path("scripts/a.py"))
+        assert not fm.load_script(tutils.test_data.path("scripts/a.py"))
         assert not fm.load_script(None)
         assert fm.load_script("nonexistent")
-        assert "ValueError" in fm.load_script("scripts/starterr.py")
+        assert "ValueError" in fm.load_script(tutils.test_data.path("scripts/starterr.py"))
+
+    def test_replay(self):
+        s = flow.State()
+        fm = flow.FlowMaster(None, s)
+        f = tutils.tflow_full()
+        f.request.content = flow.CONTENT_MISSING
+        assert "missing" in fm.replay_request(f)
+
+        f.intercepting = True
+        assert "intercepting" in fm.replay_request(f)
 
     def test_script_reqerr(self):
         s = flow.State()
         fm = flow.FlowMaster(None, s)
-        assert not fm.load_script("scripts/reqerr.py")
+        assert not fm.load_script(tutils.test_data.path("scripts/reqerr.py"))
         req = tutils.treq()
         fm.handle_clientconnect(req.client_conn)
         assert fm.handle_request(req)
@@ -516,7 +569,7 @@ class uFlowMaster(libpry.AutoTree):
     def test_script(self):
         s = flow.State()
         fm = flow.FlowMaster(None, s)
-        assert not fm.load_script("scripts/all.py")
+        assert not fm.load_script(tutils.test_data.path("scripts/all.py"))
         req = tutils.treq()
         fm.handle_clientconnect(req.client_conn)
         assert fm.script.ns["log"][-1] == "clientconnect"
@@ -526,9 +579,11 @@ class uFlowMaster(libpry.AutoTree):
         fm.handle_response(resp)
         assert fm.script.ns["log"][-1] == "response"
         dc = flow.ClientDisconnect(req.client_conn)
+        dc.reply = controller.DummyReply()
         fm.handle_clientdisconnect(dc)
         assert fm.script.ns["log"][-1] == "clientdisconnect"
         err = flow.Error(f.request, "msg")
+        err.reply = controller.DummyReply()
         fm.handle_error(err)
         assert fm.script.ns["log"][-1] == "error"
 
@@ -562,13 +617,15 @@ class uFlowMaster(libpry.AutoTree):
         assert not fm.handle_response(rx)
 
         dc = flow.ClientDisconnect(req.client_conn)
+        dc.reply = controller.DummyReply()
         req.client_conn.requestcount = 1
         fm.handle_clientdisconnect(dc)
 
         err = flow.Error(f.request, "msg")
+        err.reply = controller.DummyReply()
         fm.handle_error(err)
 
-        fm.load_script("scripts/a.py")
+        fm.load_script(tutils.test_data.path("scripts/a.py"))
         fm.shutdown()
 
     def test_client_playback(self):
@@ -585,9 +642,12 @@ class uFlowMaster(libpry.AutoTree):
         fm.tick(q)
         assert fm.state.flow_count()
 
-        fm.handle_error(flow.Error(f.request, "error"))
+        err = flow.Error(f.request, "error")
+        err.reply = controller.DummyReply()
+        fm.handle_error(err)
 
     def test_server_playback(self):
+        controller.should_exit = False
         s = flow.State()
 
         f = tutils.tflow()
@@ -605,14 +665,29 @@ class uFlowMaster(libpry.AutoTree):
         r = tutils.tflow()
         r.request.content = "gibble"
         assert not fm.do_server_playback(r)
-
         assert fm.do_server_playback(tutils.tflow())
+
+        fm.start_server_playback(pb, False, [], True, False)
         q = Queue.Queue()
         fm.tick(q)
         assert controller.should_exit
 
         fm.stop_server_playback()
         assert not fm.server_playback
+
+    def test_server_playback_kill(self):
+        s = flow.State()
+        f = tutils.tflow()
+        f.response = tutils.tresp(f.request)
+        pb = [f]
+        fm = flow.FlowMaster(None, s)
+        fm.refresh_server_playback = True
+        fm.start_server_playback(pb, True, [], False, False)
+
+        f = tutils.tflow()
+        f.request.host = "nonexistent"
+        fm.process_new_request(f)
+        assert "killed" in f.error.msg
 
     def test_stickycookie(self):
         s = flow.State()
@@ -654,34 +729,96 @@ class uFlowMaster(libpry.AutoTree):
         fm.handle_request(f.request)
         assert f.request.headers["authorization"] == ["foo"]
 
-class uRequest(libpry.AutoTree):
+    def test_stream(self):
+        with tutils.tmpdir() as tdir:
+            p = os.path.join(tdir, "foo")
+            def r():
+                r = flow.FlowReader(open(p,"rb"))
+                return list(r.stream())
+
+            s = flow.State()
+            fm = flow.FlowMaster(None, s)
+            tf = tutils.tflow_full()
+
+            fm.start_stream(file(p, "ab"), None)
+            fm.handle_request(tf.request)
+            fm.handle_response(tf.response)
+            fm.stop_stream()
+
+            assert r()[0].response
+
+            tf = tutils.tflow_full()
+            fm.start_stream(file(p, "ab"), None)
+            fm.handle_request(tf.request)
+            fm.shutdown()
+
+            assert not r()[1].response
+
+
+class TestRequest:
     def test_simple(self):
         h = flow.ODictCaseless()
         h["test"] = ["test"]
         c = flow.ClientConnect(("addr", 2222))
-        r = flow.Request(c, "host", 22, "https", "GET", "/", h, "content")
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
         u = r.get_url()
         assert r.set_url(u)
         assert not r.set_url("")
         assert r.get_url() == u
         assert r._assemble()
+        assert r.size() == len(r._assemble())
 
         r2 = r.copy()
         assert r == r2
 
         r.content = None
         assert r._assemble()
+        assert r.size() == len(r._assemble())
 
         r.close = True
         assert "connection: close" in r._assemble()
 
         assert r._assemble(True)
 
+        r.content = flow.CONTENT_MISSING
+        assert not r._assemble()
+
+    def test_get_url(self):
+        h = flow.ODictCaseless()
+        h["test"] = ["test"]
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        assert r.get_url() == "https://host:22/"
+        assert r.get_url(hostheader=True) == "https://host:22/"
+        r.headers["Host"] = ["foo.com"]
+        assert r.get_url() == "https://host:22/"
+        assert r.get_url(hostheader=True) == "https://foo.com:22/"
+
+    def test_path_components(self):
+        h = flow.ODictCaseless()
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        assert r.get_path_components() == []
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/foo/bar", h, "content")
+        assert r.get_path_components() == ["foo", "bar"]
+        q = flow.ODict()
+        q["test"] = ["123"]
+        r.set_query(q)
+        assert r.get_path_components() == ["foo", "bar"]
+
+        r.set_path_components([])
+        assert r.get_path_components() == []
+        r.set_path_components(["foo"])
+        assert r.get_path_components() == ["foo"]
+        r.set_path_components(["/oo"])
+        assert r.get_path_components() == ["/oo"]
+        assert "%2F" in r.path
+
     def test_getset_form_urlencoded(self):
         h = flow.ODictCaseless()
         h["content-type"] = [flow.HDR_FORM_URLENCODED]
         d = flow.ODict([("one", "two"), ("three", "four")])
-        r = flow.Request(None, "host", 22, "https", "GET", "/", h, utils.urlencode(d.lst))
+        r = flow.Request(None, (1, 1), "host", 22, "https", "GET", "/", h, utils.urlencode(d.lst))
         assert r.get_form_urlencoded() == d
 
         d = flow.ODict([("x", "y")])
@@ -694,19 +831,19 @@ class uRequest(libpry.AutoTree):
     def test_getset_query(self):
         h = flow.ODictCaseless()
 
-        r = flow.Request(None, "host", 22, "https", "GET", "/foo?x=y&a=b", h, "content")
+        r = flow.Request(None, (1, 1), "host", 22, "https", "GET", "/foo?x=y&a=b", h, "content")
         q = r.get_query()
         assert q.lst == [("x", "y"), ("a", "b")]
 
-        r = flow.Request(None, "host", 22, "https", "GET", "/", h, "content")
+        r = flow.Request(None, (1, 1), "host", 22, "https", "GET", "/", h, "content")
         q = r.get_query()
         assert not q
 
-        r = flow.Request(None, "host", 22, "https", "GET", "/?adsfa", h, "content")
+        r = flow.Request(None, (1, 1), "host", 22, "https", "GET", "/?adsfa", h, "content")
         q = r.get_query()
-        assert not q
+        assert q.lst == [("adsfa", "")]
 
-        r = flow.Request(None, "host", 22, "https", "GET", "/foo?x=y&a=b", h, "content")
+        r = flow.Request(None, (1, 1), "host", 22, "https", "GET", "/foo?x=y&a=b", h, "content")
         assert r.get_query()
         r.set_query(flow.ODict([]))
         assert not r.get_query()
@@ -716,7 +853,7 @@ class uRequest(libpry.AutoTree):
 
     def test_anticache(self):
         h = flow.ODictCaseless()
-        r = flow.Request(None, "host", 22, "https", "GET", "/", h, "content")
+        r = flow.Request(None, (1, 1), "host", 22, "https", "GET", "/", h, "content")
         h["if-modified-since"] = ["test"]
         h["if-none-match"] = ["test"]
         r.anticache()
@@ -727,7 +864,7 @@ class uRequest(libpry.AutoTree):
         h = flow.ODictCaseless()
         h["test"] = ["test"]
         c = flow.ClientConnect(("addr", 2222))
-        r = flow.Request(c, "host", 22, "https", "GET", "/", h, "content")
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
         state = r._get_state()
         assert flow.Request._from_state(state) == r
 
@@ -735,7 +872,7 @@ class uRequest(libpry.AutoTree):
         state = r._get_state()
         assert flow.Request._from_state(state) == r
 
-        r2 = flow.Request(c, "testing", 20, "http", "PUT", "/foo", h, "test")
+        r2 = flow.Request(c, (1, 1), "testing", 20, "http", "PUT", "/foo", h, "test")
         assert not r == r2
         r._load_state(r2._get_state())
         assert r == r2
@@ -789,24 +926,96 @@ class uRequest(libpry.AutoTree):
         assert not r.headers["content-encoding"]
         assert r.content == "falafel"
 
+    def test_get_decoded_content(self):
+        r = tutils.treq()
+        r.content = None
+        r.headers["content-encoding"] = ["identity"]
+        assert r.get_decoded_content() == None
 
-class uResponse(libpry.AutoTree):
+        r.content = "falafel"
+        r.encode("gzip")
+        assert r.get_decoded_content() == "falafel"
+
+    def test_get_cookies_none(self):
+        h = flow.ODictCaseless()
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        assert r.get_cookies() == None
+
+    def test_get_cookies_single(self):
+        h = flow.ODictCaseless()
+        h["Cookie"] = ["cookiename=cookievalue"]
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        result = r.get_cookies()
+        assert len(result)==1
+        assert result['cookiename']==('cookievalue',{})
+
+    def test_get_cookies_double(self):
+        h = flow.ODictCaseless()
+        h["Cookie"] = ["cookiename=cookievalue;othercookiename=othercookievalue"]
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        result = r.get_cookies()
+        assert len(result)==2
+        assert result['cookiename']==('cookievalue',{})
+        assert result['othercookiename']==('othercookievalue',{})
+
+    def test_get_cookies_withequalsign(self):
+        h = flow.ODictCaseless()
+        h["Cookie"] = ["cookiename=coo=kievalue;othercookiename=othercookievalue"]
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        result = r.get_cookies()
+        assert len(result)==2
+        assert result['cookiename']==('coo=kievalue',{})
+        assert result['othercookiename']==('othercookievalue',{})
+
+    def test_get_header_size(self):
+        h = flow.ODictCaseless()
+        h["headername"] = ["headervalue"]
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        result = r.get_header_size()
+        assert result==43
+
+    def test_get_transmitted_size(self):
+        h = flow.ODictCaseless()
+        h["headername"] = ["headervalue"]
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        result = r.get_transmitted_size()
+        assert result==len("content")
+        r.content = None
+        assert r.get_transmitted_size() == 0
+
+    def test_get_content_type(self):
+        h = flow.ODictCaseless()
+        h["Content-Type"] = ["text/plain"]
+        c = flow.ClientConnect(("addr", 2222))
+        r = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        assert r.get_content_type()=="text/plain"
+
+class TestResponse:
     def test_simple(self):
         h = flow.ODictCaseless()
         h["test"] = ["test"]
         c = flow.ClientConnect(("addr", 2222))
-        req = flow.Request(c, "host", 22, "https", "GET", "/", h, "content")
-        resp = flow.Response(req, 200, "msg", h.copy(), "content", None)
+        req = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        resp = flow.Response(req, (1, 1), 200, "msg", h.copy(), "content", None)
         assert resp._assemble()
+        assert resp.size() == len(resp._assemble())
+
 
         resp2 = resp.copy()
         assert resp2 == resp
 
         resp.content = None
         assert resp._assemble()
+        assert resp.size() == len(resp._assemble())
 
-        resp.request.client_conn.close = True
-        assert "connection: close" in resp._assemble()
+        resp.content = flow.CONTENT_MISSING
+        assert not resp._assemble()
 
     def test_refresh(self):
         r = tutils.tresp()
@@ -835,25 +1044,17 @@ class uResponse(libpry.AutoTree):
         c = "MOO=BAR; Expires=Tue, 08-Mar-2011 00:20:38 GMT; Path=foo.com; Secure"
         assert "00:21:38" in r._refresh_cookie(c, 60)
 
-    def test_get_cert(self):
-        req = tutils.treq()
-        resp = flow.Response(req, 200, "msg", flow.ODictCaseless(), "content", file("data/dercert").read())
-        assert resp.get_cert()
-
-        resp = tutils.tresp()
-        assert not resp.get_cert()
-
     def test_getset_state(self):
         h = flow.ODictCaseless()
         h["test"] = ["test"]
         c = flow.ClientConnect(("addr", 2222))
-        req = flow.Request(c, "host", 22, "https", "GET", "/", h, "content")
-        resp = flow.Response(req, 200, "msg", h.copy(), "content", None)
+        req = flow.Request(c, (1, 1), "host", 22, "https", "GET", "/", h, "content")
+        resp = flow.Response(req, (1, 1), 200, "msg", h.copy(), "content", None)
 
         state = resp._get_state()
         assert flow.Response._from_state(req, state) == resp
 
-        resp2 = flow.Response(req, 220, "foo", h.copy(), "test", None)
+        resp2 = flow.Response(req, (1, 1), 220, "foo", h.copy(), "test", None)
         assert not resp == resp2
         resp._load_state(resp2._get_state())
         assert resp == resp2
@@ -891,8 +1092,68 @@ class uResponse(libpry.AutoTree):
         assert not r.headers["content-encoding"]
         assert r.content == "falafel"
 
+    def test_get_header_size(self):
+        r = tutils.tresp()
+        result = r.get_header_size()
+        assert result==49
 
-class uError(libpry.AutoTree):
+    def test_get_cookies_none(self):
+        h = flow.ODictCaseless()
+        resp = flow.Response(None, (1, 1), 200, "OK", h, "content", None)
+        assert not resp.get_cookies()
+
+    def test_get_cookies_simple(self):
+        h = flow.ODictCaseless()
+        h["Set-Cookie"] = ["cookiename=cookievalue"]
+        resp = flow.Response(None, (1, 1), 200, "OK", h, "content", None)
+        result = resp.get_cookies()
+        assert len(result)==1
+        assert "cookiename" in result
+        assert result["cookiename"] == ("cookievalue", {})
+
+    def test_get_cookies_with_parameters(self):
+        h = flow.ODictCaseless()
+        h["Set-Cookie"] = ["cookiename=cookievalue;domain=example.com;expires=Wed Oct  21 16:29:41 2015;path=/; HttpOnly"]
+        resp = flow.Response(None, (1, 1), 200, "OK", h, "content", None)
+        result = resp.get_cookies()
+        assert len(result)==1
+        assert "cookiename" in result
+        assert result["cookiename"][0] == "cookievalue"
+        assert len(result["cookiename"][1])==4
+        assert result["cookiename"][1]["domain"]=="example.com"
+        assert result["cookiename"][1]["expires"]=="Wed Oct  21 16:29:41 2015"
+        assert result["cookiename"][1]["path"]=="/"
+        assert result["cookiename"][1]["httponly"]==""
+
+    def test_get_cookies_no_value(self):
+        h = flow.ODictCaseless()
+        h["Set-Cookie"] = ["cookiename=; Expires=Thu, 01-Jan-1970 00:00:01 GMT; path=/"]
+        resp = flow.Response(None, (1, 1), 200, "OK", h, "content", None)
+        result = resp.get_cookies()
+        assert len(result)==1
+        assert "cookiename" in result
+        assert result["cookiename"][0] == ""
+        assert len(result["cookiename"][1])==2
+
+    def test_get_cookies_twocookies(self):
+        h = flow.ODictCaseless()
+        h["Set-Cookie"] = ["cookiename=cookievalue","othercookie=othervalue"]
+        resp = flow.Response(None, (1, 1), 200, "OK", h, "content", None)
+        result = resp.get_cookies()
+        assert len(result)==2
+        assert "cookiename" in result
+        assert result["cookiename"] == ("cookievalue", {})
+        assert "othercookie" in result
+        assert result["othercookie"] == ("othervalue", {})
+
+    def test_get_content_type(self):
+        h = flow.ODictCaseless()
+        h["Content-Type"] = ["text/plain"]
+        resp = flow.Response(None, (1, 1), 200, "OK", h, "content", None)
+        assert resp.get_content_type()=="text/plain"
+
+
+class TestError:
     def test_getset_state(self):
         e = flow.Error(None, "Error")
         state = e._get_state()
@@ -915,7 +1176,7 @@ class uError(libpry.AutoTree):
         assert e.msg == "abarp"
 
 
-class uClientConnect(libpry.AutoTree):
+class TestClientConnect:
     def test_state(self):
         c = flow.ClientConnect(("a", 22))
         assert flow.ClientConnect._from_state(c._get_state()) == c
@@ -930,186 +1191,127 @@ class uClientConnect(libpry.AutoTree):
         c3 = c.copy()
         assert c3 == c
 
-
-class uODict(libpry.AutoTree):
-    def setUp(self):
-        self.od = flow.ODict()
-
-    def test_str_err(self):
-        h = flow.ODict()
-        libpry.raises(ValueError, h.__setitem__, "key", "foo")
-
-    def test_dictToHeader1(self):
-        self.od.add("one", "uno")
-        self.od.add("two", "due")
-        self.od.add("two", "tre")
-        expected = [
-            "one: uno\r\n",
-            "two: due\r\n",
-            "two: tre\r\n",
-            "\r\n"
-        ]
-        out = repr(self.od)
-        for i in expected:
-            assert out.find(i) >= 0
-
-    def test_dictToHeader2(self):
-        self.od["one"] = ["uno"]
-        expected1 = "one: uno\r\n"
-        expected2 = "\r\n"
-        out = repr(self.od)
-        assert out.find(expected1) >= 0
-        assert out.find(expected2) >= 0
-
-    def test_match_re(self):
-        h = flow.ODict()
-        h.add("one", "uno")
-        h.add("two", "due")
-        h.add("two", "tre")
-        assert h.match_re("uno")
-        assert h.match_re("two: due")
-        assert not h.match_re("nonono")
-
-    def test_getset_state(self):
-        self.od.add("foo", 1)
-        self.od.add("foo", 2)
-        self.od.add("bar", 3)
-        state = self.od._get_state()
-        nd = flow.ODict._from_state(state)
-        assert nd == self.od
-
-    def test_in_any(self):
-        self.od["one"] = ["atwoa", "athreea"]
-        assert self.od.in_any("one", "two")
-        assert self.od.in_any("one", "three")
-        assert not self.od.in_any("one", "four")
-        assert not self.od.in_any("nonexistent", "foo")
-        assert not self.od.in_any("one", "TWO")
-        assert self.od.in_any("one", "TWO", True)
-
-    def test_copy(self):
-        self.od.add("foo", 1)
-        self.od.add("foo", 2)
-        self.od.add("bar", 3)
-        assert self.od == self.od.copy()
-
-    def test_del(self):
-        self.od.add("foo", 1)
-        self.od.add("Foo", 2)
-        self.od.add("bar", 3)
-        del self.od["foo"]
-        assert len(self.od.lst) == 2
-
-    def test_replace(self):
-        self.od.add("one", "two")
-        self.od.add("two", "one")
-        assert self.od.replace("one", "vun") == 2
-        assert self.od.lst == [
-            ["vun", "two"],
-            ["two", "vun"],
-        ]
-
-    def test_get(self):
-        self.od.add("one", "two")
-        assert self.od.get("one") == ["two"]
-        assert self.od.get("two") == None
+        assert str(c)
 
 
-class uODictCaseless(libpry.AutoTree):
-    def setUp(self):
-        self.od = flow.ODictCaseless()
-
-    def test_del(self):
-        self.od.add("foo", 1)
-        self.od.add("Foo", 2)
-        self.od.add("bar", 3)
-        del self.od["foo"]
-        assert len(self.od) == 1
-
-
-class udecoded(libpry.AutoTree):
-    def test_del(self):
-        r = tutils.treq()
-        assert r.content == "content"
+def test_decoded():
+    r = tutils.treq()
+    assert r.content == "content"
+    assert not r.headers["content-encoding"]
+    r.encode("gzip")
+    assert r.headers["content-encoding"]
+    assert r.content != "content"
+    with flow.decoded(r):
         assert not r.headers["content-encoding"]
-        r.encode("gzip")
-        assert r.headers["content-encoding"]
-        assert r.content != "content"
-        with flow.decoded(r):
-            assert not r.headers["content-encoding"]
-            assert r.content == "content"
-        assert r.headers["content-encoding"]
-        assert r.content != "content"
+        assert r.content == "content"
+    assert r.headers["content-encoding"]
+    assert r.content != "content"
 
-        with flow.decoded(r):
-            r.content = "foo"
+    with flow.decoded(r):
+        r.content = "foo"
 
-        assert r.content != "foo"
-        r.decode()
-        assert r.content == "foo"
+    assert r.content != "foo"
+    r.decode()
+    assert r.content == "foo"
 
 
-class uReplaceHooks(libpry.AutoTree):
-    def test_add_remove(self):
-        h = flow.ReplaceHooks()
-        h.add("~q", "foo", "bar")
-        assert h.lst
-        h.remove("~q", "foo", "bar")
-        assert not h.lst
+def test_replacehooks():
+    h = flow.ReplaceHooks()
+    h.add("~q", "foo", "bar")
+    assert h.lst
 
-        h.add("~q", "foo", "bar")
-        h.add("~s", "foo", "bar")
+    h.set(
+        [
+            (".*", "one", "two"),
+            (".*", "three", "four"),
+        ]
+    )
+    assert h.count() == 2
 
-        v = h.get_specs()
-        assert v == [('~q', 'foo', 'bar'), ('~s', 'foo', 'bar')]
-        assert h.count() == 2
-        h.remove("~q", "foo", "bar")
-        assert h.count() == 1
-        h.remove("~q", "foo", "bar")
-        assert h.count() == 1
-        h.clear()
-        assert h.count() == 0
+    h.clear()
+    assert not h.lst
 
-        f = tutils.tflow()
-        f.request.content = "foo"
-        h.add("~s", "foo", "bar")
-        h.run(f)
-        assert f.request.content == "foo"
+    h.add("~q", "foo", "bar")
+    h.add("~s", "foo", "bar")
 
-        f = tutils.tflow_full()
-        f.request.content = "foo"
-        f.response.content = "foo"
-        h.run(f)
-        assert f.response.content == "bar"
-        assert f.request.content == "foo"
+    v = h.get_specs()
+    assert v == [('~q', 'foo', 'bar'), ('~s', 'foo', 'bar')]
+    assert h.count() == 2
+    h.clear()
+    assert h.count() == 0
 
-        f = tutils.tflow()
-        h.clear()
-        h.add("~q", "foo", "bar")
-        f.request.content = "foo"
-        h.run(f)
-        assert f.request.content == "bar"
+    f = tutils.tflow()
+    f.request.content = "foo"
+    h.add("~s", "foo", "bar")
+    h.run(f)
+    assert f.request.content == "foo"
 
-        assert not h.add("~", "foo", "bar")
-        assert not h.add("foo", "*", "bar")
+    f = tutils.tflow_full()
+    f.request.content = "foo"
+    f.response.content = "foo"
+    h.run(f)
+    assert f.response.content == "bar"
+    assert f.request.content == "foo"
+
+    f = tutils.tflow()
+    h.clear()
+    h.add("~q", "foo", "bar")
+    f.request.content = "foo"
+    h.run(f)
+    assert f.request.content == "bar"
+
+    assert not h.add("~", "foo", "bar")
+    assert not h.add("foo", "*", "bar")
 
 
+def test_setheaders():
+    h = flow.SetHeaders()
+    h.add("~q", "foo", "bar")
+    assert h.lst
 
-tests = [
-    uReplaceHooks(),
-    uStickyCookieState(),
-    uStickyAuthState(),
-    uServerPlaybackState(),
-    uClientPlaybackState(),
-    uFlow(),
-    uState(),
-    uSerialize(),
-    uFlowMaster(),
-    uRequest(),
-    uResponse(),
-    uError(),
-    uClientConnect(),
-    uODict(),
-    uODictCaseless(),
-    udecoded()
-]
+    h.set(
+        [
+            (".*", "one", "two"),
+            (".*", "three", "four"),
+        ]
+    )
+    assert h.count() == 2
+
+    h.clear()
+    assert not h.lst
+
+    h.add("~q", "foo", "bar")
+    h.add("~s", "foo", "bar")
+
+    v = h.get_specs()
+    assert v == [('~q', 'foo', 'bar'), ('~s', 'foo', 'bar')]
+    assert h.count() == 2
+    h.clear()
+    assert h.count() == 0
+
+    f = tutils.tflow()
+    f.request.content = "foo"
+    h.add("~s", "foo", "bar")
+    h.run(f)
+    assert f.request.content == "foo"
+
+
+    h.clear()
+    h.add("~s", "one", "two")
+    h.add("~s", "one", "three")
+    f = tutils.tflow_full()
+    f.request.headers["one"] = ["xxx"]
+    f.response.headers["one"] = ["xxx"]
+    h.run(f)
+    assert f.request.headers["one"] == ["xxx"]
+    assert f.response.headers["one"] == ["two", "three"]
+
+    h.clear()
+    h.add("~q", "one", "two")
+    h.add("~q", "one", "three")
+    f = tutils.tflow()
+    f.request.headers["one"] = ["xxx"]
+    h.run(f)
+    assert f.request.headers["one"] == ["two", "three"]
+
+    assert not h.add("~", "foo", "bar")

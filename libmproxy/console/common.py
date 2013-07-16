@@ -15,7 +15,7 @@
 
 import urwid
 import urwid.util
-from .. import utils
+from .. import utils, flow
 
 
 
@@ -177,25 +177,31 @@ class FlowCache:
 flowcache = FlowCache()
 
 
-def format_flow(f, focus, extended=False, padding=2):
+def format_flow(f, focus, extended=False, hostheader=False, padding=2):
     d = dict(
         intercepting = f.intercepting,
 
-        req_timestamp = f.request.timestamp,
+        req_timestamp = f.request.timestamp_start,
         req_is_replay = f.request.is_replay(),
         req_method = f.request.method,
-        req_acked = f.request.acked,
-        req_url = f.request.get_url(),
+        req_acked = f.request.reply.acked,
+        req_url = f.request.get_url(hostheader=hostheader),
 
         err_msg = f.error.msg if f.error else None,
         resp_code = f.response.code if f.response else None,
     )
     if f.response:
+        if f.response.content:
+            contentdesc = utils.pretty_size(len(f.response.content))
+        elif f.response.content == flow.CONTENT_MISSING:
+            contentdesc = "[content missing]"
+        else:
+            contentdesc = "[no content]"
         d.update(dict(
             resp_code = f.response.code,
             resp_is_replay = f.response.is_replay(),
-            resp_acked = f.response.acked,
-            resp_clen = utils.pretty_size(len(f.response.content)) if f.response.content else "[empty content]"
+            resp_acked = f.response.reply.acked,
+            resp_clen = contentdesc
         ))
         t = f.response.headers["content-type"]
         if t:
