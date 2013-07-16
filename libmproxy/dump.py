@@ -14,13 +14,14 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import sys, os
+import netlib.utils
 import flow, filt, utils
 
 class DumpError(Exception): pass
 
 
 class Options(object):
-    __slots__ = [
+    attributes = [
         "anticache",
         "anticomp",
         "client_replay",
@@ -33,8 +34,10 @@ class Options(object):
         "replacements",
         "rfile",
         "rheaders",
+        "setheaders",
         "server_replay",
         "script",
+        "showhost",
         "stickycookie",
         "stickyauth",
         "verbosity",
@@ -43,7 +46,7 @@ class Options(object):
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
-        for i in self.__slots__:
+        for i in self.attributes:
             if not hasattr(self, i):
                 setattr(self, i, None)
 
@@ -55,12 +58,12 @@ def str_response(resp):
     return r
 
 
-def str_request(req):
+def str_request(req, showhost):
     if req.client_conn:
         c = req.client_conn.address[0]
     else:
         c = "[replay]"
-    r = "%s %s %s"%(c, req.method, req.get_url())
+    r = "%s %s %s"%(c, req.method, req.get_url(showhost))
     if req.stickycookie:
         r = "[stickycookie] " + r
     return r
@@ -74,6 +77,7 @@ class DumpMaster(flow.FlowMaster):
         self.anticache = options.anticache
         self.anticomp = options.anticomp
         self.eventlog = options.eventlog
+        self.showhost = options.showhost
         self.refresh_server_playback = options.refresh_server_playback
 
         if filtstr:
@@ -91,13 +95,17 @@ class DumpMaster(flow.FlowMaster):
             path = os.path.expanduser(options.wfile)
             try:
                 f = file(path, "wb")
-                self.fwriter = flow.FlowWriter(f)
+                self.start_stream(f, self.filt)
             except IOError, v:
                 raise DumpError(v.strerror)
 
         if options.replacements:
             for i in options.replacements:
                 self.replacehooks.add(*i)
+
+        if options.setheaders:
+            for i in options.setheaders:
+                self.setheaders.add(*i)
 
         if options.server_replay:
             self.start_server_playback(
@@ -121,20 +129,19 @@ class DumpMaster(flow.FlowMaster):
         if options.rfile:
             path = os.path.expanduser(options.rfile)
             try:
-                f = file(path, "r")
+                f = file(path, "rb")
                 freader = flow.FlowReader(f)
             except IOError, v:
                 raise DumpError(v.strerror)
             try:
                 self.load_flows(freader)
             except flow.FlowReadError, v:
-                raise DumpError(v)
-
+                self.add_event("Flow file corrupted. Stopped loading.")
 
     def _readflow(self, path):
         path = os.path.expanduser(path)
         try:
-            f = file(path, "r")
+            f = file(path, "rb")
             flows = list(flow.FlowReader(f).stream())
         except (IOError, flow.FlowReadError), v:
             raise DumpError(v.strerror)
@@ -143,18 +150,14 @@ class DumpMaster(flow.FlowMaster):
     def add_event(self, e, level="info"):
         if self.eventlog:
             print >> self.outfile, e
-
-    def handle_request(self, r):
-        f = flow.FlowMaster.handle_request(self, r)
-        if f:
-            r._ack()
-        return f
+            self.outfile.flush()
 
     def indent(self, n, t):
         l = str(t).strip().split("\n")
         return "\n".join(" "*n + i for i in l)
 
     def _process_flow(self, f):
+        self.state.delete_flow(f)
         if self.filt and not f.match(self.filt):
             return
 
@@ -166,7 +169,7 @@ class DumpMaster(flow.FlowMaster):
                 result = result + "\n\n" + self.indent(4, f.response.headers)
             if self.o.verbosity > 2:
                 if utils.isBin(f.response.content):
-                    d = utils.hexdump(f.response.content)
+                    d = netlib.utils.hexdump(f.response.content)
                     d = "\n".join("%s\t%s %s"%i for i in d)
                     cont = self.indent(4, d)
                 elif f.response.content:
@@ -178,33 +181,41 @@ class DumpMaster(flow.FlowMaster):
             result = " << %s"%f.error.msg
 
         if self.o.verbosity == 1:
-            print >> self.outfile, str_request(f.request)
+            print >> self.outfile, str_request(f.request, self.showhost)
             print >> self.outfile, result
         elif self.o.verbosity == 2:
-            print >> self.outfile, str_request(f.request)
+            print >> self.outfile, str_request(f.request, self.showhost)
             print >> self.outfile, self.indent(4, f.request.headers)
             print >> self.outfile
             print >> self.outfile, result
             print >> self.outfile, "\n"
         elif self.o.verbosity >= 3:
-            print >> self.outfile, str_request(f.request)
+            print >> self.outfile, str_request(f.request, self.showhost)
             print >> self.outfile, self.indent(4, f.request.headers)
             if utils.isBin(f.request.content):
-                print >> self.outfile, self.indent(4, utils.hexdump(f.request.content))
+                print >> self.outfile, self.indent(4, netlib.utils.hexdump(f.request.content))
             elif f.request.content:
                 print >> self.outfile, self.indent(4, f.request.content)
             print >> self.outfile
             print >> self.outfile, result
             print >> self.outfile, "\n"
+        if self.o.verbosity:
+            self.outfile.flush()
 
-        self.state.delete_flow(f)
-        if self.o.wfile:
-            self.fwriter.add(f)
+    def handle_log(self, l):
+        self.add_event(l.msg)
+        l.reply()
+
+    def handle_request(self, r):
+        f = flow.FlowMaster.handle_request(self, r)
+        if f:
+            r.reply()
+        return f
 
     def handle_response(self, msg):
         f = flow.FlowMaster.handle_response(self, msg)
         if f:
-            msg._ack()
+            msg.reply()
             self._process_flow(f)
         return f
 
@@ -214,8 +225,10 @@ class DumpMaster(flow.FlowMaster):
             self._process_flow(f)
         return f
 
-# begin nocover
-    def run(self):
+    def shutdown(self):  # pragma: no cover
+        return flow.FlowMaster.shutdown(self)
+
+    def run(self):  # pragma: no cover
         if self.o.rfile and not self.o.keepserving:
             if self.script:
                 self.load_script(None)

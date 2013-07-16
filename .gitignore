@@ -3,12 +3,12 @@ MANIFEST
 /dist
 /tmp
 /doc
+/venv
 *.py[cdo]
 *.swp
 *.swo
 mitmproxyc
 mitmdumpc
-mitmplaybackc
-mitmrecordc
-debian/mitmproxy/
-
+.coverage
+netlib
+libpathod

@@ -1,43 +1,40 @@
 import os, sys
 import countershape
-from countershape import Page, Directory, PythonModule, markup
+from countershape import Page, Directory, PythonModule, markup, model
 import countershape.template
 sys.path.insert(0, "..")
 from libmproxy import filt
 
-MITMPROXY_SRC = "~/git/public/mitmproxy"
+MITMPROXY_SRC = "~/mitmproxy/mitmproxy"
 
 if ns.options.website:
-    ns.title = countershape.template.Template(None, "<h1>@!this.title!@</h1>")
+    ns.idxpath = "doc/index.html"
     this.layout = countershape.Layout("_websitelayout.html")
 else:
-    ns.title = countershape.template.Template(None, "<h1>@!this.title!@</h1>")
+    ns.idxpath = "index.html"
     this.layout = countershape.Layout("_layout.html")
 
-this.markup = markup.Markdown()
+
+ns.title = countershape.template.Template(None, "<h1>@!this.title!@</h1>")
+this.titlePrefix = "mitmproxy 0.9 - "
+this.markup = markup.Markdown(extras=["footnotes"])
+
 ns.docMaintainer = "Aldo Cortesi"
 ns.docMaintainerEmail = "aldo@corte.si"
-ns.copyright = u"\u00a9 mitmproxy project, 2012"
-
-ns.index = countershape.widgets.SiblingPageIndex('/index.html', divclass="pageindex")
+ns.copyright = u"\u00a9 mitmproxy project, 2013"
 
 def mpath(p):
     p = os.path.join(MITMPROXY_SRC, p)
     return os.path.expanduser(p)
 
-ns.license = file(mpath("LICENSE")).read()
 ns.index_contents = file(mpath("README.mkd")).read()
 
-
-
-top = os.path.abspath(os.getcwd())
 def example(s):
-    d = file(mpath(s)).read()
+    d = file(mpath(s)).read().rstrip()
     extemp = """<div class="example">%s<div class="example_legend">(%s)</div></div>"""
     return extemp%(countershape.template.Syntax("py")(d), s)
-
-
 ns.example = example
+
 
 filt_help = []
 for i in filt.filt_unary:
@@ -64,26 +61,26 @@ filt_help.extend(
 ns.filt_help = filt_help
 
 
+def nav(page, current, state):
+    if current.match(page, False):
+        pre = '<li class="active">'
+    else:
+        pre = "<li>"
+    p = state.application.getPage(page)
+    return pre + '<a href="%s">%s</a></li>'%(model.UrlTo(page), p.title)
+ns.nav = nav
 
 pages = [
-    Page("index.html", "docs"),
-    Page("intro.html", "Introduction"),
+    Page("index.html", "Introduction"),
     Page("install.html", "Installation"),
     Page("mitmproxy.html", "mitmproxy"),
     Page("mitmdump.html", "mitmdump"),
-    Page("clientreplay.html", "Client-side replay"),
-    Page("serverreplay.html", "Server-side replay"),
-    Page("sticky.html", "Sticky cookies and auth"),
-    Page("upstreamcerts.html", "Upstream Certs"),
-    Page("replacements.html", "Replacements"),
-    Page("reverseproxy.html", "Reverse proxy mode"),
-    Page("anticache.html", "Anticache"),
-    Page("filters.html", "Filter expressions"),
-    Page("scripts.html", "Scripts"),
-    Page("ssl.html", "Setting up SSL interception"),
+    Page("howmitmproxy.html", "How mitmproxy works"),
+
+    Page("ssl.html", "Overview"),
     Directory("certinstall"),
-    Page("library.html", "libmproxy: mitmproxy as a library"),
+    Directory("scripting"),
     Directory("tutorials"),
-    Page("faq.html", "FAQ"),
-    Page("admin.html", "Administrivia")
+    Page("transparent.html", "Overview"),
+    Directory("transparent"),
 ]

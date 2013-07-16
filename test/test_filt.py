@@ -1,9 +1,8 @@
 import cStringIO
 from libmproxy import filt, flow
-import libpry
 
 
-class uParsing(libpry.AutoTree):
+class TestParsing:
     def _dump(self, x):
         c = cStringIO.StringIO()
         x.dump(fp=c)
@@ -71,13 +70,14 @@ class uParsing(libpry.AutoTree):
         self._dump(a)
 
 
-class uMatching(libpry.AutoTree):
+class TestMatching:
     def req(self):
         conn = flow.ClientConnect(("one", 2222))
         headers = flow.ODictCaseless()
         headers["header"] = ["qvalue"]
         req = flow.Request(
                     conn,
+                    (1, 1),
                     "host",
                     80,
                     "http",
@@ -95,6 +95,7 @@ class uMatching(libpry.AutoTree):
         headers["header_response"] = ["svalue"]
         f.response = flow.Response(
                     f.request,
+                    (1, 1),
                     200,
                     "message",
                     headers,
@@ -110,6 +111,12 @@ class uMatching(libpry.AutoTree):
 
     def q(self, q, o):
         return filt.parse(q)(o)
+
+    def test_asset(self):
+        s = self.resp()
+        assert not self.q("~a", s)
+        s.response.headers["content-type"] = ["text/javascript"]
+        assert self.q("~a", s)
 
     def test_fcontenttype(self):
         q = self.req()
@@ -194,6 +201,12 @@ class uMatching(libpry.AutoTree):
         q.request.method = "oink"
         assert not self.q("~m get", q)
 
+    def test_domain(self):
+        q = self.req()
+        s = self.resp()
+        assert self.q("~d host", q)
+        assert not self.q("~d none", q)
+
     def test_url(self):
         q = self.req()
         s = self.resp()
@@ -235,11 +248,3 @@ class uMatching(libpry.AutoTree):
         assert self.q("!~c 201 !~c 202", s)
         assert not self.q("!~c 201 !~c 200", s)
 
-
-
-
-
-tests = [
-    uMatching(),
-    uParsing()
-]

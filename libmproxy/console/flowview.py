@@ -16,7 +16,7 @@
 import os, sys
 import urwid
 import common, grideditor, contentview
-from .. import utils, flow
+from .. import utils, flow, controller
 
 def _mkhelp():
     text = []
@@ -34,8 +34,12 @@ def _mkhelp():
                 [("text", ": automatic detection")]
             ),
             (None,
-                common.highlight_key("hex", "h") +
+                common.highlight_key("hex", "e") +
                 [("text", ": Hex")]
+            ),
+            (None,
+                common.highlight_key("html", "h") +
+                [("text", ": HTML")]
             ),
             (None,
                 common.highlight_key("image", "i") +
@@ -68,6 +72,7 @@ def _mkhelp():
         ("v", "view body in external viewer"),
         ("w", "save all flows matching current limit"),
         ("W", "save this flow"),
+        ("x", "delete body"),
         ("X", "view flow details"),
         ("z", "encode/decode a request/response"),
         ("tab", "toggle request/response view"),
@@ -87,11 +92,11 @@ footer = [
 class FlowViewHeader(common.WWrap):
     def __init__(self, master, f):
         self.master, self.flow = master, f
-        self.w = common.format_flow(f, False, extended=True, padding=0)
+        self.w = common.format_flow(f, False, extended=True, padding=0, hostheader=self.master.showhost)
 
     def refresh_flow(self, f):
         if f == self.flow:
-            self.w = common.format_flow(f, False, extended=True, padding=0)
+            self.w = common.format_flow(f, False, extended=True, padding=0, hostheader=self.master.showhost)
 
 
 class CallbackCache:
@@ -127,7 +132,7 @@ class FlowView(common.WWrap):
             self.view_request()
 
     def _cached_content_view(self, viewmode, hdrItems, content, limit):
-        return contentview.get_content_view(viewmode, hdrItems, content, limit)
+        return contentview.get_content_view(viewmode, hdrItems, content, limit, self.master.add_event)
 
     def content_view(self, viewmode, conn):
         full = self.state.get_flow_setting(
@@ -153,14 +158,17 @@ class FlowView(common.WWrap):
                 key = "header",
                 val = "text"
             )
-        if conn.content:
+        if conn.content is not None:
             override = self.state.get_flow_setting(
                 self.flow,
                 (self.state.view_flow_mode, "prettyview"),
             )
             viewmode = self.state.default_body_view if override is None else override
 
-            msg, body = self.content_view(viewmode, conn)
+            if conn.content == flow.CONTENT_MISSING:
+                msg, body = "", [urwid.Text([("error", "[content missing]")])]
+            else:
+                msg, body = self.content_view(viewmode, conn)
 
             cols = [
                 urwid.Text(
@@ -176,7 +184,7 @@ class FlowView(common.WWrap):
                             " ",
                             ('heading', "["),
                             ('heading_key', "m"),
-                            ('heading', (":%s]"%contentview.VIEW_NAMES[viewmode])),
+                            ('heading', (":%s]"%viewmode.name)),
                         ],
                         align="right"
                     )
@@ -184,6 +192,8 @@ class FlowView(common.WWrap):
             title = urwid.AttrWrap(urwid.Columns(cols), "heading")
             txt.append(title)
             txt.extend(body)
+        elif conn.content == flow.CONTENT_MISSING:
+            pass
         return urwid.ListBox(txt)
 
     def _tab(self, content, attr):
@@ -195,7 +205,7 @@ class FlowView(common.WWrap):
     def wrap_body(self, active, body):
         parts = []
 
-        if self.flow.intercepting and not self.flow.request.acked:
+        if self.flow.intercepting and not self.flow.request.reply.acked:
             qt = "Request intercepted"
         else:
             qt = "Request"
@@ -204,7 +214,7 @@ class FlowView(common.WWrap):
         else:
             parts.append(self._tab(qt, "heading_inactive"))
 
-        if self.flow.intercepting and self.flow.response and not self.flow.response.acked:
+        if self.flow.intercepting and self.flow.response and not self.flow.response.reply.acked:
             st = "Response intercepted"
         else:
             st = "Response"
@@ -311,6 +321,9 @@ class FlowView(common.WWrap):
     def set_query(self, lst, conn):
         conn.set_query(flow.ODict(lst))
 
+    def set_path_components(self, lst, conn):
+        conn.set_path_components([i[0] for i in lst])
+
     def set_form(self, lst, conn):
         conn.set_form_urlencoded(flow.ODict(lst))
 
@@ -328,13 +341,18 @@ class FlowView(common.WWrap):
             conn = self.flow.request
         else:
             if not self.flow.response:
-                self.flow.response = flow.Response(self.flow.request, 200, "OK", flow.ODictCaseless(), "")
+                self.flow.response = flow.Response(
+                    self.flow.request, 
+                    self.flow.request.httpversion,
+                    200, "OK", flow.ODictCaseless(), "", None
+                )
+                self.flow.response.reply = controller.DummyReply()
             conn = self.flow.response
 
         self.flow.backup()
         if part == "r":
             c = self.master.spawn_editor(conn.content or "")
-            conn.content = c.rstrip("\n")
+            conn.content = c.rstrip("\n") # what?
         elif part == "f":
             if not conn.get_form_urlencoded() and conn.content:
                 self.master.prompt_onekey(
@@ -350,6 +368,10 @@ class FlowView(common.WWrap):
                 self.edit_form(conn)
         elif part == "h":
             self.master.view_grideditor(grideditor.HeaderEditor(self.master, conn.headers.lst, self.set_headers, conn))
+        elif part == "p":
+            p = conn.get_path_components()
+            p = [[i] for i in p]
+            self.master.view_grideditor(grideditor.PathEditor(self.master, p, self.set_path_components, conn))
         elif part == "q":
             self.master.view_grideditor(grideditor.QueryEditor(self.master, conn.get_query().lst, self.set_query, conn))
         elif part == "u" and self.state.view_flow_mode == common.VIEW_FLOW_REQUEST:
@@ -386,8 +408,19 @@ class FlowView(common.WWrap):
         self.state.add_flow_setting(
             self.flow,
             (self.state.view_flow_mode, "prettyview"),
-            contentview.VIEW_SHORTCUTS.get(t)
+            contentview.get_by_shortcut(t)
         )
+        self.master.refresh_flow(self.flow)
+
+    def delete_body(self, t):
+        if t == "m":
+            val = flow.CONTENT_MISSING
+        else:
+            val = None
+        if self.state.view_flow_mode == common.VIEW_FLOW_REQUEST:
+            self.flow.request.content = val
+        else:
+            self.flow.response.content = val
         self.master.refresh_flow(self.flow)
 
     def keypress(self, size, key):
@@ -453,9 +486,10 @@ class FlowView(common.WWrap):
                     "Edit request",
                     (
                         ("query", "q"),
-                        ("form", "f"),
+                        ("path", "p"),
                         ("url", "u"),
                         ("header", "h"),
+                        ("form", "f"),
                         ("raw body", "r"),
                         ("method", "m"),
                     ),
@@ -483,7 +517,7 @@ class FlowView(common.WWrap):
             self.master.refresh_flow(self.flow)
             self.master.statusbar.message("")
         elif key == "m":
-            p = list(contentview.VIEW_PROMPT)
+            p = list(contentview.view_prompts)
             p.insert(0, ("clear", "c"))
             self.master.prompt_onekey(
                 "Display mode",
@@ -517,19 +551,32 @@ class FlowView(common.WWrap):
             if conn and conn.content:
                 t = conn.headers["content-type"] or [None]
                 t = t[0]
-                self.master.spawn_external_viewer(conn.content, t)
+                if os.environ.has_key("EDITOR") or os.environ.has_key("PAGER"):
+                    self.master.spawn_external_viewer(conn.content, t)
+                else:
+                    self.master.statusbar.message("Error! Set $EDITOR or $PAGER.")
         elif key == "|":
             self.master.path_prompt(
                 "Send flow to script: ", self.state.last_script,
                 self.master.run_script_once, self.flow
             )
+        elif key == "x":
+            self.master.prompt_onekey(
+                "Delete body",
+                (
+                    ("completely", "c"),
+                    ("mark as missing", "m"),
+                ),
+                self.delete_body
+            )
+            key = None
         elif key == "X":
             self.master.view_flowdetails(self.flow)
         elif key == "z":
             if conn:
                 self.flow.backup()
-                e = conn.headers["content-encoding"] or ["identity"]
-                if e[0] != "identity":
+                e = conn.headers.get_first("content-encoding", "identity")
+                if e != "identity":
                     conn.decode()
                 else:
                     self.master.prompt_onekey(

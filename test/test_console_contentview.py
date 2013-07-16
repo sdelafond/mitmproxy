@@ -1,9 +1,15 @@
 import sys
-import libpry
 import libmproxy.console.contentview as cv
 from libmproxy import utils, flow, encoding
+import tutils
 
-class uContentView(libpry.AutoTree):
+try:
+    import pyamf
+except ImportError:
+    pyamf = None
+
+
+class TestContentView:
     def test_trailer(self):
         txt = []
         cv.trailer(5, txt, 1000)
@@ -11,70 +17,76 @@ class uContentView(libpry.AutoTree):
         cv.trailer(cv.VIEW_CUTOFF + 10, txt, cv.VIEW_CUTOFF)
         assert txt
 
-    def test_get_view_func(self):
-        f = cv.get_view_func(
-                cv.VIEW_HEX,
+    def test_view_auto(self):
+        v = cv.ViewAuto()
+        f = v(
                 flow.ODictCaseless(),
-                "foo"
+                "foo",
+                1000
               )
-        assert f is cv.view_hex
+        assert f[0] == "Raw"
 
-        f = cv.get_view_func(
-                cv.VIEW_AUTO,
-                flow.ODictCaseless(),
-                "foo"
-              )
-        assert f is cv.view_raw
-
-        f = cv.get_view_func(
-                cv.VIEW_AUTO,
+        f = v(
                 flow.ODictCaseless(
                     [["content-type", "text/html"]],
                 ),
-                "foo"
+                "<html></html>",
+                1000
               )
-        assert f is cv.view_html
+        assert f[0] == "HTML"
 
-        f = cv.get_view_func(
-                cv.VIEW_AUTO,
+        f = v(
                 flow.ODictCaseless(
                     [["content-type", "text/flibble"]],
                 ),
-                "foo"
+                "foo",
+                1000
               )
-        assert f is cv.view_raw
+        assert f[0] == "Raw"
 
-        f = cv.get_view_func(
-                cv.VIEW_AUTO,
+        f = v(
                 flow.ODictCaseless(
                     [["content-type", "text/flibble"]],
                 ),
-                "<xml></xml>"
+                "<xml></xml>",
+                1000
               )
-        assert f is cv.view_xml
+        assert f[0].startswith("XML")
+
 
     def test_view_urlencoded(self):
         d = utils.urlencode([("one", "two"), ("three", "four")])
-        assert cv.view_urlencoded([], d, 100)
-        assert not cv.view_urlencoded([], "foo", 100)
+        v = cv.ViewURLEncoded()
+        assert v([], d, 100)
+        d = utils.urlencode([("adsfa", "")])
+        v = cv.ViewURLEncoded()
+        assert v([], d, 100)
 
     def test_view_html(self):
+        v = cv.ViewHTML()
         s = "<html><br><br></br><p>one</p></html>"
-        assert cv.view_html([], s, 1000)
+        assert v([], s, 1000)
 
         s = "gobbledygook"
-        assert not cv.view_html([], s, 1000)
+        assert not v([], s, 1000)
+
+    def test_view_html_outline(self):
+        v = cv.ViewHTMLOutline()
+        s = "<html><br><br></br><p>one</p></html>"
+        assert v([], s, 1000)
 
     def test_view_json(self):
         cv.VIEW_CUTOFF = 100
-        assert cv.view_json([], "{}", 1000)
-        assert not cv.view_json([], "{", 1000)
-        assert cv.view_json([], "[" + ",".join(["0"]*cv.VIEW_CUTOFF) + "]", 1000)
-        assert cv.view_json([], "[1, 2, 3, 4, 5]", 5)
+        v = cv.ViewJSON()
+        assert v([], "{}", 1000)
+        assert not v([], "{", 1000)
+        assert v([], "[" + ",".join(["0"]*cv.VIEW_CUTOFF) + "]", 1000)
+        assert v([], "[1, 2, 3, 4, 5]", 5)
 
     def test_view_xml(self):
-        assert cv.view_xml([], "<foo></foo>", 1000)
-        assert not cv.view_xml([], "<foo>", 1000)
+        v = cv.ViewXML()
+        assert v([], "<foo></foo>", 1000)
+        assert not v([], "<foo>", 1000)
         s = """<?xml version="1.0" encoding="UTF-8"?>
             <?xml-stylesheet title="XSL_formatting"?>
             <rss
@@ -83,27 +95,40 @@ class uContentView(libpry.AutoTree):
                 version="2.0">
             </rss>
         """
-        assert cv.view_xml([], s, 1000)
+        assert v([], s, 1000)
 
     def test_view_raw(self):
-        assert cv.view_raw([], "foo", 1000)
+        v = cv.ViewRaw()
+        assert v([], "foo", 1000)
 
     def test_view_javascript(self):
-        assert cv.view_javascript([], "[1, 2, 3]", 100)
-        assert cv.view_javascript([], "[1, 2, 3", 100)
-        assert cv.view_javascript([], "function(a){[1, 2, 3]}", 100)
+        v = cv.ViewJavaScript()
+        assert v([], "[1, 2, 3]", 100)
+        assert v([], "[1, 2, 3", 100)
+        assert v([], "function(a){[1, 2, 3]}", 100)
 
     def test_view_hex(self):
-        assert cv.view_hex([], "foo", 1000)
+        v = cv.ViewHex()
+        assert v([], "foo", 1000)
 
     def test_view_image(self):
-        assert cv.view_image([], file("data/image.png").read(), sys.maxint)
-        assert cv.view_image([], file("data/image.gif").read(), sys.maxint)
-        assert cv.view_image([], file("data/image-err1.jpg").read(), sys.maxint)
-        assert cv.view_image([], file("data/image.ico").read(), sys.maxint)
-        assert not cv.view_image([], "flibble", sys.maxint)
+        v = cv.ViewImage()
+        p = tutils.test_data.path("data/image.png")
+        assert v([], file(p,"rb").read(), sys.maxint)
+
+        p = tutils.test_data.path("data/image.gif")
+        assert v([], file(p,"rb").read(), sys.maxint)
+
+        p = tutils.test_data.path("data/image-err1.jpg")
+        assert v([], file(p,"rb").read(), sys.maxint)
+
+        p = tutils.test_data.path("data/image.ico")
+        assert v([], file(p,"rb").read(), sys.maxint)
+
+        assert not v([], "flibble", sys.maxint)
 
     def test_view_multipart(self):
+        view = cv.ViewMultipart()
         v = """
 --AaB03x
 Content-Disposition: form-data; name="submit-name"
@@ -114,71 +139,109 @@ Larry
         h = flow.ODictCaseless(
             [("Content-Type", "multipart/form-data; boundary=AaB03x")]
         )
-        assert cv.view_multipart(h, v, 1000)
+        assert view(h, v, 1000)
 
         h = flow.ODictCaseless()
-        assert not cv.view_multipart(h, v, 1000)
+        assert not view(h, v, 1000)
 
         h = flow.ODictCaseless(
             [("Content-Type", "multipart/form-data")]
         )
-        assert not cv.view_multipart(h, v, 1000)
+        assert not view(h, v, 1000)
 
         h = flow.ODictCaseless(
             [("Content-Type", "unparseable")]
         )
-        assert not cv.view_multipart(h, v, 1000)
+        assert not view(h, v, 1000)
 
     def test_get_content_view(self):
         r = cv.get_content_view(
-                cv.VIEW_RAW,
+                cv.get("Raw"),
                 [["content-type", "application/json"]],
                 "[1, 2, 3]",
-                1000
+                1000,
+                lambda x: None
               )
         assert "Raw" in r[0]
 
         r = cv.get_content_view(
-                cv.VIEW_AUTO,
+                cv.get("Auto"),
                 [["content-type", "application/json"]],
                 "[1, 2, 3]",
-                1000
+                1000,
+                lambda x: None
               )
         assert r[0] == "JSON"
 
         r = cv.get_content_view(
-                cv.VIEW_AUTO,
+                cv.get("Auto"),
                 [["content-type", "application/json"]],
                 "[1, 2",
-                1000
+                1000,
+                lambda x: None
               )
         assert "Raw" in r[0]
 
         r = cv.get_content_view(
-                cv.VIEW_AUTO,
+                cv.get("AMF"),
+                [],
+                "[1, 2",
+                1000,
+                lambda x: None
+              )
+        assert "Raw" in r[0]
+
+
+        r = cv.get_content_view(
+                cv.get("Auto"),
                 [
                     ["content-type", "application/json"],
                     ["content-encoding", "gzip"]
                 ],
                 encoding.encode('gzip', "[1, 2, 3]"),
-                1000
+                1000,
+                lambda x: None
               )
         assert "decoded gzip" in r[0]
         assert "JSON" in r[0]
 
         r = cv.get_content_view(
-                cv.VIEW_XML,
+                cv.get("XML"),
                 [
                     ["content-type", "application/json"],
                     ["content-encoding", "gzip"]
                 ],
                 encoding.encode('gzip', "[1, 2, 3]"),
-                1000
+                1000,
+                lambda x: None
               )
         assert "decoded gzip" in r[0]
         assert "Raw" in r[0]
 
 
-tests = [
-    uContentView()
-]
+if pyamf:
+    def test_view_amf_request():
+        v = cv.ViewAMF()
+
+        p = tutils.test_data.path("data/amf01")
+        assert v([], file(p,"rb").read(), sys.maxint)
+
+        p = tutils.test_data.path("data/amf02")
+        assert v([], file(p,"rb").read(), sys.maxint)
+
+    def test_view_amf_response():
+        v = cv.ViewAMF()
+        p = tutils.test_data.path("data/amf03")
+        assert v([], file(p,"rb").read(), sys.maxint)
+
+if cv.ViewProtobuf.is_available():
+    def test_view_protobuf_request():
+        v = cv.ViewProtobuf()
+
+        p = tutils.test_data.path("data/protobuf01")
+        content_type, output = v([], file(p,"rb").read(), sys.maxint)
+        assert content_type == "Protobuf"
+        assert output[0].text == '1: "3bbc333c-e61c-433b-819a-0b9a8cc103b8"'
+
+def test_get_by_shortcut():
+    assert cv.get_by_shortcut("h")

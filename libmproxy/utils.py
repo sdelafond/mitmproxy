@@ -12,9 +12,10 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-import os, datetime, urlparse, string, urllib
+import os, datetime, urlparse, string, urllib, re
 import time, functools, cgi
 import json
+from netlib import http
 
 def timestamp():
     """
@@ -54,24 +55,6 @@ def isXML(s):
             return False
 
 
-def cleanBin(s, fixspacing=False):
-    """
-        Cleans binary data to make it safe to display. If fixspacing is True,
-        tabs, newlines and so forth will be maintained, if not, they will be
-        replaced with a placeholder.
-    """
-    parts = []
-    for i in s:
-        o = ord(i)
-        if (o > 31 and o < 127):
-            parts.append(i)
-        elif i in "\n\r\t" and not fixspacing:
-            parts.append(i)
-        else:
-            parts.append(".")
-    return "".join(parts)
-
-
 def pretty_json(s):
     try:
         p = json.loads(s)
@@ -84,7 +67,7 @@ def urldecode(s):
     """
         Takes a urlencoded string and returns a list of (key, value) tuples.
     """
-    return cgi.parse_qsl(s)
+    return cgi.parse_qsl(s, keep_blank_values=True)
 
 
 def urlencode(s):
@@ -93,25 +76,6 @@ def urlencode(s):
     """
     s = [tuple(i) for i in s]
     return urllib.urlencode(s, False)
-
-
-def hexdump(s):
-    """
-        Returns a set of typles:
-            (offset, hex, str)
-    """
-    parts = []
-    for i in range(0, len(s), 16):
-        o = "%.10x"%i
-        part = s[i:i+16]
-        x = " ".join("%.2x"%ord(i) for i in part)
-        if len(part) < 16:
-            x += " "
-            x += " ".join("  " for i in range(16 - len(part)))
-        parts.append(
-            (o, x, cleanBin(part, True))
-        )
-    return parts
 
 
 def del_all(dict, keys):
@@ -194,33 +158,8 @@ class LRUCache:
         return wrap
 
 
-def parse_url(url):
-    """
-        Returns a (scheme, host, port, path) tuple, or None on error.
-    """
-    scheme, netloc, path, params, query, fragment = urlparse.urlparse(url)
-    if not scheme:
-        return None
-    if ':' in netloc:
-        host, port = string.rsplit(netloc, ':', maxsplit=1)
-        try:
-            port = int(port)
-        except ValueError:
-            return None
-    else:
-        host = netloc
-        if scheme == "https":
-            port = 443
-        else:
-            port = 80
-    path = urlparse.urlunparse(('', '', path, params, query, fragment))
-    if not path.startswith("/"):
-        path = "/" + path
-    return scheme, host, port, path
-
-
 def parse_proxy_spec(url):
-    p = parse_url(url)
+    p = http.parse_url(url)
     if not p or not p[1]:
         return None
     return p[:3]
@@ -277,7 +216,7 @@ def clean_hanging_newline(t):
         problem at the risk of removing a hanging newline in the rare cases
         where the user actually intends it.
     """
-    if t[-1] == "\n":
+    if t and t[-1] == "\n":
         return t[:-1]
     return t
 
@@ -309,3 +248,12 @@ def parse_size(s):
         return int(s) * mult
     except ValueError:
         raise ValueError("Invalid size specification: %s"%s)
+
+
+def safe_subn(pattern, repl, target, *args, **kwargs):
+    """
+        There are Unicode conversion problems with re.subn. We try to smooth
+        that over by casting the pattern and replacement to strings. We really
+        need a better solution that is aware of the actual content ecoding.
+    """
+    return re.subn(str(pattern), str(repl), target, *args, **kwargs)

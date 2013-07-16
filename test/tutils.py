@@ -1,15 +1,18 @@
-import threading, Queue
-import libpry
-from libmproxy import proxy, flow, controller
-import serv, sslserv
-import random
+import os, shutil, tempfile
+from contextlib import contextmanager
+from libmproxy import flow, utils, controller
+from netlib import certutils
+import mock
 
 def treq(conn=None):
     if not conn:
         conn = flow.ClientConnect(("address", 22))
+    conn.reply = controller.DummyReply()
     headers = flow.ODictCaseless()
     headers["header"] = ["qvalue"]
-    return flow.Request(conn, "host", 80, "http", "GET", "/path", headers, "content")
+    r = flow.Request(conn, (1, 1), "host", 80, "http", "GET", "/path", headers, "content")
+    r.reply = controller.DummyReply()
+    return r
 
 
 def tresp(req=None):
@@ -17,7 +20,10 @@ def tresp(req=None):
         req = treq()
     headers = flow.ODictCaseless()
     headers["header_response"] = ["svalue"]
-    return flow.Response(req, 200, "message", headers, "content_response", None)
+    cert = certutils.SSLCert.from_der(file(test_data.path("data/dercert"),"rb").read())
+    resp = flow.Response(req, (1, 1), 200, "message", headers, "content_response", cert)
+    resp.reply = controller.DummyReply()
+    return resp
 
 
 def tflow():
@@ -36,82 +42,59 @@ def tflow_err():
     r = treq()
     f = flow.Flow(r)
     f.error = flow.Error(r, "error")
+    f.error.reply = controller.DummyReply()
     return f
 
 
-# Yes, the random ports are horrible. During development, sockets are often not
-# properly closed during error conditions, which means you have to wait until
-# you can re-bind to the same port. This is a pain in the ass, so we just pick
-# a random port and keep moving.
-PROXL_PORT = random.randint(10000, 20000)
-HTTP_PORT = random.randint(20000, 30000)
-HTTPS_PORT = random.randint(30000, 40000)
+
+@contextmanager
+def tmpdir(*args, **kwargs):
+    orig_workdir = os.getcwd()
+    temp_workdir = tempfile.mkdtemp(*args, **kwargs)
+    os.chdir(temp_workdir)
+
+    yield temp_workdir
+
+    os.chdir(orig_workdir)
+    shutil.rmtree(temp_workdir)
 
 
-class TestMaster(controller.Master):
-    def __init__(self, port, testq):
-        s = proxy.ProxyServer(proxy.ProxyConfig("data/testkey.pem"), port)
-        controller.Master.__init__(self, s)
-        self.testq = testq
-        self.log = []
+def raises(exc, obj, *args, **kwargs):
+    """
+        Assert that a callable raises a specified exception.
 
-    def clear(self):
-        self.log = []
+        :exc An exception class or a string. If a class, assert that an
+        exception of this type is raised. If a string, assert that the string
+        occurs in the string representation of the exception, based on a
+        case-insenstivie match.
 
-    def handle(self, m):
-        self.log.append(m)
-        m._ack()
+        :obj A callable object.
 
+        :args Arguments to be passsed to the callable.
 
-class ProxyThread(threading.Thread):
-    def __init__(self, port, testq):
-        self.tmaster = TestMaster(port, testq)
-        controller.should_exit = False
-        threading.Thread.__init__(self)
+        :kwargs Arguments to be passed to the callable.
+    """
+    try:
+        apply(obj, args, kwargs)
+    except Exception, v:
+        if isinstance(exc, basestring):
+            if exc.lower() in str(v).lower():
+                return
+            else:
+                raise AssertionError(
+                    "Expected %s, but caught %s"%(
+                        repr(str(exc)), v
+                    )
+                )
+        else:
+            if isinstance(v, exc):
+                return
+            else:
+                raise AssertionError(
+                    "Expected %s, but caught %s %s"%(
+                        exc.__name__, v.__class__.__name__, str(v)
+                    )
+                )
+    raise AssertionError("No exception raised.")
 
-    def run(self):
-        self.tmaster.run()
-
-    def shutdown(self):
-        self.tmaster.shutdown()
-
-
-class ServerThread(threading.Thread):
-    def __init__(self, server):
-        self.server = server
-        threading.Thread.__init__(self)
-
-    def run(self):
-        self.server.serve_forever()
-
-    def shutdown(self):
-        self.server.shutdown()
-
-
-class TestServers(libpry.TestContainer):
-    def setUpAll(self):
-        self.tqueue = Queue.Queue()
-        # We don't make any concurrent requests, so we can access
-        # the attributes on this object safely.
-        self.proxthread = ProxyThread(PROXL_PORT, self.tqueue)
-        self.threads = [
-            ServerThread(serv.make(HTTP_PORT)),
-            ServerThread(sslserv.make(HTTPS_PORT)),
-            self.proxthread
-        ]
-        for i in self.threads:
-            i.start()
-
-    def setUp(self):
-        self.proxthread.tmaster.clear()
-
-    def tearDownAll(self):
-        for i in self.threads:
-            i.shutdown()
-
-
-class ProxTest(libpry.AutoTree):
-    def log(self):
-        pthread = self.findAttr("proxthread")
-        return pthread.tmaster.log
-
+test_data = utils.Data(__name__)

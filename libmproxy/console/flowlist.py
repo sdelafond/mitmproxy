@@ -20,17 +20,18 @@ def _mkhelp():
     text = []
     keys = [
         ("A", "accept all intercepted flows"),
-        ("a", "accept this intercepted flows"),
+        ("a", "accept this intercepted flow"),
         ("C", "clear flow list or eventlog"),
         ("d", "delete flow"),
         ("D", "duplicate flow"),
         ("e", "toggle eventlog"),
+        ("F", "toggle follow flow list"),
         ("l", "set limit filter pattern"),
         ("L", "load saved flows"),
         ("r", "replay request"),
         ("V", "revert changes to request"),
-        ("w", "save all flows matching current limit"),
-        ("W", "save this flow"),
+        ("w", "save flows "),
+        ("W", "stream flows to file"),
         ("X", "kill and delete flow, even if it's mid-intercept"),
         ("tab", "tab between eventlog and flow list"),
         ("enter", "view flow"),
@@ -73,13 +74,11 @@ class BodyPile(urwid.Pile):
             ]
         )
         self.master = master
-        self.focus = 0
 
     def keypress(self, size, key):
         if key == "tab":
-            self.focus = (self.focus + 1)%len(self.widget_list)
-            self.set_focus(self.focus)
-            if self.focus == 1:
+            self.focus_position = (self.focus_position + 1)%len(self.widget_list)
+            if self.focus_position == 1:
                 self.widget_list[1].header = self.active_header
             else:
                 self.widget_list[1].header = self.inactive_header
@@ -101,15 +100,54 @@ class BodyPile(urwid.Pile):
 class ConnectionItem(common.WWrap):
     def __init__(self, master, state, flow, focus):
         self.master, self.state, self.flow = master, state, flow
-        self.focus = focus
+        self.f = focus
         w = self.get_text()
         common.WWrap.__init__(self, w)
 
     def get_text(self):
-        return common.format_flow(self.flow, self.focus)
+        return common.format_flow(self.flow, self.f, hostheader=self.master.showhost)
 
     def selectable(self):
         return True
+
+    def save_flows_prompt(self, k):
+        if k == "a":
+            self.master.path_prompt(
+                "Save all flows to: ",
+                self.state.last_saveload,
+                self.master.save_flows
+            )
+        else:
+            self.master.path_prompt(
+                "Save this flow to: ",
+                self.state.last_saveload,
+                self.master.save_one_flow,
+                self.flow
+            )
+
+    def stop_server_playback_prompt(self, a):
+        if a != "n":
+            self.master.stop_server_playback()
+
+    def server_replay_prompt(self, k):
+        if k == "a":
+            self.master.start_server_playback(
+                [i.copy() for i in self.master.state.view],
+                self.master.killextra, self.master.rheaders,
+                False, self.master.nopop
+            )
+        elif k == "t":
+            self.master.start_server_playback(
+                [self.flow.copy()],
+                self.master.killextra, self.master.rheaders,
+                False, self.master.nopop
+            )
+        else:
+            self.master.path_prompt(
+                "Server replay path: ",
+                self.state.last_saveload,
+                self.master.server_playback_path
+            )
 
     def keypress(self, (maxcol,), key):
         key = common.shortcuts(key)
@@ -130,6 +168,26 @@ class ConnectionItem(common.WWrap):
             if r:
                 self.master.statusbar.message(r)
             self.master.sync_list_view()
+        elif key == "S":
+            if not self.master.server_playback:
+                self.master.prompt_onekey(
+                    "Server Replay",
+                    (
+                        ("all flows", "a"),
+                        ("this flow", "t"),
+                        ("file", "f"),
+                    ),
+                    self.server_replay_prompt,
+                )
+            else:
+                self.master.prompt_onekey(
+                    "Stop current server replay?",
+                    (
+                        ("yes", "y"),
+                        ("no", "n"),
+                    ),
+                    self.stop_server_playback_prompt,
+                )
         elif key == "V":
             if not self.flow.modified():
                 self.master.statusbar.message("Flow not modified.")
@@ -138,17 +196,13 @@ class ConnectionItem(common.WWrap):
             self.master.sync_list_view()
             self.master.statusbar.message("Reverted.")
         elif key == "w":
-            self.master.path_prompt(
-                "Save flows: ",
-                self.state.last_saveload,
-                self.master.save_flows
-            )
-        elif key == "W":
-            self.master.path_prompt(
-                "Save this flow: ",
-                self.state.last_saveload,
-                self.master.save_one_flow,
-                self.flow
+            self.master.prompt_onekey(
+                "Save",
+                (
+                    ("all flows", "a"),
+                    ("this flow", "t"),
+                ),
+                self.save_flows_prompt,
             )
         elif key == "X":
             self.flow.kill(self.master)
@@ -214,5 +268,16 @@ class FlowListBox(urwid.ListBox):
                 self.master.state.last_saveload,
                 self.master.load_flows_callback
             )
+        elif key == "F":
+            self.master.toggle_follow_flows()
+        elif key == "W":
+            if self.master.stream:
+                self.master.stop_stream()
+            else:
+                self.master.path_prompt(
+                    "Stream flows to: ",
+                    self.master.state.last_saveload,
+                    self.master.start_stream
+                )
         else:
             return urwid.ListBox.keypress(self, size, key)
