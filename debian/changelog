@@ -1,3 +1,9 @@
+mitmproxy (0.9.2-1) unstable; urgency=low
+
+  * New upstream release
+
+ -- Sebastien Delafond <seb@debian.org>  Tue, 31 Dec 2013 12:41:31 +0100
+
 mitmproxy (0.9.1-2) unstable; urgency=low
 
   * Add dependency on python-netlib (Closes: #724239)
