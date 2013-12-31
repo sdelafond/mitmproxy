@@ -617,7 +617,6 @@ def process_proxy_options(parser, options):
         authenticator = http_auth.NullProxyAuth(None)
 
     return ProxyConfig(
-        app = options.app,
         certfile = options.cert,
         cacert = cacert,
         clientcerts = options.clientcerts,
