@@ -1,2 +1,2 @@
 version=3
-https://github.com/cortesi/mitmproxy/tags .*/v(\d[\d\.]*)\.tar\.gz debian uupdate
+https://github.com/mitmproxy/mitmproxy/tags .*/v(\d[\d\.]*)\.tar\.gz debian uupdate
