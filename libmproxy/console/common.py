@@ -1,22 +1,10 @@
-# Copyright (C) 2012  Aldo Cortesi
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 import urwid
 import urwid.util
-from .. import utils
+from .. import utils, flow
 
+
+VIEW_LIST = 0
+VIEW_FLOW = 1
 
 
 VIEW_FLOW_REQUEST = 0
@@ -156,6 +144,8 @@ def raw_format_flow(f, focus, extended, padding):
         if f["resp_ctype"]:
             resp.append(fcol(f["resp_ctype"], rc))
         resp.append(fcol(f["resp_clen"], rc))
+        resp.append(fcol(f["resp_rate"], rc))
+
     elif f["err_msg"]:
         resp.append(fcol(SYMBOL_RETURN, "error"))
         resp.append(
@@ -177,25 +167,37 @@ class FlowCache:
 flowcache = FlowCache()
 
 
-def format_flow(f, focus, extended=False, padding=2):
+def format_flow(f, focus, extended=False, hostheader=False, padding=2):
     d = dict(
         intercepting = f.intercepting,
 
-        req_timestamp = f.request.timestamp,
+        req_timestamp = f.request.timestamp_start,
         req_is_replay = f.request.is_replay(),
         req_method = f.request.method,
-        req_acked = f.request.acked,
-        req_url = f.request.get_url(),
+        req_acked = f.request.reply.acked,
+        req_url = f.request.get_url(hostheader=hostheader),
 
         err_msg = f.error.msg if f.error else None,
         resp_code = f.response.code if f.response else None,
     )
     if f.response:
+        if f.response.content:
+            contentdesc = utils.pretty_size(len(f.response.content))
+        elif f.response.content == flow.CONTENT_MISSING:
+            contentdesc = "[content missing]"
+        else:
+            contentdesc = "[no content]"
+
+        delta = f.response.timestamp_end - f.response.timestamp_start
+        size = len(f.response.content) + f.response.get_header_size()
+        rate = utils.pretty_size(size / delta)
+
         d.update(dict(
             resp_code = f.response.code,
             resp_is_replay = f.response.is_replay(),
-            resp_acked = f.response.acked,
-            resp_clen = utils.pretty_size(len(f.response.content)) if f.response.content else "[empty content]"
+            resp_acked = f.response.reply.acked,
+            resp_clen = contentdesc,
+            resp_rate = "{0}/s".format(rate),
         ))
         t = f.response.headers["content-type"]
         if t:

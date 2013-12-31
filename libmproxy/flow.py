@@ -1,44 +1,40 @@
-# Copyright (C) 2012  Aldo Cortesi
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 """
     This module provides more sophisticated flow tracking. These match requests
     with their responses, and provide filtering and interception facilities.
 """
-import hashlib, Cookie, cookielib, copy, re, urlparse
-import time
+import hashlib, Cookie, cookielib, copy, re, urlparse, os
+import time, urllib
 import tnetstring, filt, script, utils, encoding, proxy
 from email.utils import parsedate_tz, formatdate, mktime_tz
-import controller, version, certutils
+from netlib import odict, http, certutils
+import controller, version
+import app
 
 HDR_FORM_URLENCODED = "application/x-www-form-urlencoded"
+CONTENT_MISSING = 0
+
+ODict = odict.ODict
+ODictCaseless = odict.ODictCaseless
 
 
 class ReplaceHooks:
     def __init__(self):
         self.lst = []
 
+    def set(self, r):
+        self.clear()
+        for i in r:
+            self.add(*i)
+
     def add(self, fpatt, rex, s):
         """
-            Add a replacement hook.
+            add a replacement hook.
 
-            fpatt: A string specifying a filter pattern.
-            rex: A regular expression.
-            s: The replacement string
+            fpatt: a string specifying a filter pattern.
+            rex: a regular expression.
+            s: the replacement string
 
-            Returns True if hook was added, False if the pattern could not be
+            returns true if hook was added, false if the pattern could not be
             parsed.
         """
         cpatt = filt.parse(fpatt)
@@ -50,17 +46,6 @@ class ReplaceHooks:
             return False
         self.lst.append((fpatt, rex, s, cpatt))
         return True
-
-    def remove(self, fpatt, rex, s):
-        """
-            Remove a hook.
-
-            patt: A string specifying a filter pattern.
-            func: Optional callable. If not specified, all hooks matching patt are removed.
-        """
-        for i in range(len(self.lst)-1, -1, -1):
-            if (fpatt, rex, s) == self.lst[i][:3]:
-                del self.lst[i]
 
     def get_specs(self):
         """
@@ -81,6 +66,59 @@ class ReplaceHooks:
 
     def clear(self):
         self.lst = []
+
+
+class SetHeaders:
+    def __init__(self):
+        self.lst = []
+
+    def set(self, r):
+        self.clear()
+        for i in r:
+            self.add(*i)
+
+    def add(self, fpatt, header, value):
+        """
+            Add a set header hook.
+
+            fpatt: String specifying a filter pattern.
+            header: Header name.
+            value: Header value string
+
+            Returns True if hook was added, False if the pattern could not be
+            parsed.
+        """
+        cpatt = filt.parse(fpatt)
+        if not cpatt:
+            return False
+        self.lst.append((fpatt, header, value, cpatt))
+        return True
+
+    def get_specs(self):
+        """
+            Retrieve the hook specifcations. Returns a list of (fpatt, rex, s) tuples.
+        """
+        return [i[:3] for i in self.lst]
+
+    def count(self):
+        return len(self.lst)
+
+    def clear(self):
+        self.lst = []
+
+    def run(self, f):
+        for _, header, value, cpatt in self.lst:
+            if cpatt(f):
+                if f.response:
+                    del f.response.headers[header]
+                else:
+                    del f.request.headers[header]
+        for _, header, value, cpatt in self.lst:
+            if cpatt(f):
+                if f.response:
+                    f.response.headers.add(header, value)
+                else:
+                    f.request.headers.add(header, value)
 
 
 class ScriptContext:
@@ -116,154 +154,6 @@ class ScriptContext:
         self._master.replay_request(f)
 
 
-class ODict:
-    """
-        A dictionary-like object for managing ordered (key, value) data.
-    """
-    def __init__(self, lst=None):
-        self.lst = lst or []
-
-    def _kconv(self, s):
-        return s
-
-    def __eq__(self, other):
-        return self.lst == other.lst
-
-    def __getitem__(self, k):
-        """
-            Returns a list of values matching key.
-        """
-        ret = []
-        k = self._kconv(k)
-        for i in self.lst:
-            if self._kconv(i[0]) == k:
-                ret.append(i[1])
-        return ret
-
-    def _filter_lst(self, k, lst):
-        new = []
-        for i in lst:
-            if self._kconv(i[0]) != k:
-                new.append(i)
-        return new
-
-    def __len__(self):
-        """
-            Total number of (key, value) pairs.
-        """
-        return len(self.lst)
-
-    def __setitem__(self, k, valuelist):
-        """
-            Sets the values for key k. If there are existing values for this
-            key, they are cleared.
-        """
-        if isinstance(valuelist, basestring):
-            raise ValueError("ODict valuelist should be lists.")
-        k = self._kconv(k)
-        new = self._filter_lst(k, self.lst)
-        for i in valuelist:
-            new.append((k, i))
-        self.lst = new
-
-    def __delitem__(self, k):
-        """
-            Delete all items matching k.
-        """
-        self.lst = self._filter_lst(k, self.lst)
-
-    def __contains__(self, k):
-        for i in self.lst:
-            if self._kconv(i[0]) == k:
-                return True
-        return False
-
-    def add(self, key, value):
-        self.lst.append([key, str(value)])
-
-    def get(self, k, d=None):
-        if k in self:
-            return self[k]
-        else:
-            return d
-
-    def _get_state(self):
-        return [tuple(i) for i in self.lst]
-
-    @classmethod
-    def _from_state(klass, state):
-        return klass([list(i) for i in state])
-
-    def copy(self):
-        """
-            Returns a copy of this object.
-        """
-        lst = copy.deepcopy(self.lst)
-        return self.__class__(lst)
-
-    def __repr__(self):
-        elements = []
-        for itm in self.lst:
-            elements.append(itm[0] + ": " + itm[1])
-        elements.append("")
-        return "\r\n".join(elements)
-
-    def in_any(self, key, value, caseless=False):
-        """
-            Do any of the values matching key contain value?
-
-            If caseless is true, value comparison is case-insensitive.
-        """
-        if caseless:
-            value = value.lower()
-        for i in self[key]:
-            if caseless:
-                i = i.lower()
-            if value in i:
-                return True
-        return False
-
-    def match_re(self, expr):
-        """
-            Match the regular expression against each (key, value) pair. For
-            each pair a string of the following format is matched against:
-
-            "key: value"
-        """
-        for k, v in self.lst:
-            s = "%s: %s"%(k, v)
-            if re.search(expr, s):
-                return True
-        return False
-
-    def replace(self, pattern, repl, *args, **kwargs):
-        """
-            Replaces a regular expression pattern with repl in both keys and
-            values. Encoded content will be decoded before replacement, and
-            re-encoded afterwards.
-
-            Returns the number of replacements made.
-        """
-        nlst, count = [], 0
-        for i in self.lst:
-            k, c = re.subn(pattern, repl, i[0], *args, **kwargs)
-            count += c
-            v, c = re.subn(pattern, repl, i[1], *args, **kwargs)
-            count += c
-            nlst.append([k, v])
-        self.lst = nlst
-        return count
-
-
-class ODictCaseless(ODict):
-    """
-        A variant of ODict with "caseless" keys. This version _preserves_ key
-        case, but does not consider case when setting or getting items.
-    """
-    def _kconv(self, s):
-        return s.lower()
-
-
 class decoded(object):
     """
 
@@ -277,9 +167,9 @@ class decoded(object):
     """
     def __init__(self, o):
         self.o = o
-        ce = o.headers["content-encoding"]
-        if ce and ce[0] in encoding.ENCODINGS:
-            self.ce = ce[0]
+        ce = o.headers.get_first("content-encoding")
+        if ce in encoding.ENCODINGS:
+            self.ce = ce
         else:
             self.ce = None
 
@@ -292,21 +182,45 @@ class decoded(object):
             self.o.encode(self.ce)
 
 
-class HTTPMsg(controller.Msg):
+class StateObject:
+    def __eq__(self, other):
+        try:
+            return self._get_state() == other._get_state()
+        except AttributeError:
+            return False
+
+
+class HTTPMsg(StateObject):
+    def get_decoded_content(self):
+        """
+            Returns the decoded content based on the current Content-Encoding header.
+            Doesn't change the message iteself or its headers.
+        """
+        ce = self.headers.get_first("content-encoding")
+        if not self.content or ce not in encoding.ENCODINGS:
+            return self.content
+        return encoding.decode(ce, self.content)
+
     def decode(self):
         """
             Decodes content based on the current Content-Encoding header, then
             removes the header. If there is no Content-Encoding header, no
             action is taken.
+
+            Returns True if decoding succeeded, False otherwise.
         """
-        ce = self.headers["content-encoding"]
-        if not ce or ce[0] not in encoding.ENCODINGS:
-            return
-        self.content = encoding.decode(
-            ce[0],
+        ce = self.headers.get_first("content-encoding")
+        if not self.content or ce not in encoding.ENCODINGS:
+            return False
+        data = encoding.decode(
+            ce,
             self.content
         )
+        if data is None:
+            return False
+        self.content = data
         del self.headers["content-encoding"]
+        return True
 
     def encode(self, e):
         """
@@ -317,6 +231,27 @@ class HTTPMsg(controller.Msg):
         self.content = encoding.encode(e, self.content)
         self.headers["content-encoding"] = [e]
 
+    def size(self, **kwargs):
+        """
+            Size in bytes of a fully rendered message, including headers and
+            HTTP lead-in.
+        """
+        hl = len(self._assemble_head(**kwargs))
+        if self.content:
+            return hl + len(self.content)
+        else:
+            return hl
+
+    def get_content_type(self):
+        return self.headers.get_first("content-type")
+
+    def get_transmitted_size(self):
+        # FIXME: this is inprecise in case chunking is used
+        # (we should count the chunking headers)
+        if not self.content:
+            return 0
+        return len(self.content)
+
 
 class Request(HTTPMsg):
     """
@@ -325,25 +260,45 @@ class Request(HTTPMsg):
         Exposes the following attributes:
 
             client_conn: ClientConnect object, or None if this is a replay.
+
             headers: ODictCaseless object
-            content: Content of the request, or None
+
+            content: Content of the request, None, or CONTENT_MISSING if there
+            is content associated, but not present. CONTENT_MISSING evaluates
+            to False to make checking for the presence of content natural.
 
             scheme: URL scheme (http/https)
+
             host: Host portion of the URL
+
             port: Destination port
+
             path: Path portion of the URL
 
-            timestamp: Seconds since the epoch
+            timestamp_start: Seconds since the epoch signifying request transmission started
+
             method: HTTP method
+
+            timestamp_end: Seconds since the epoch signifying request transmission ended
+
+            tcp_setup_timestamp: Seconds since the epoch signifying remote TCP connection setup completion time
+            (or None, if request didn't results TCP setup)
+
+            ssl_setup_timestamp: Seconds since the epoch signifying remote SSL encryption setup completion time
+            (or None, if request didn't results SSL setup)
+
     """
-    def __init__(self, client_conn, host, port, scheme, method, path, headers, content, timestamp=None):
+    def __init__(self, client_conn, httpversion, host, port, scheme, method, path, headers, content, timestamp_start=None, timestamp_end=None, tcp_setup_timestamp=None, ssl_setup_timestamp=None):
         assert isinstance(headers, ODictCaseless)
         self.client_conn = client_conn
+        self.httpversion = httpversion
         self.host, self.port, self.scheme = host, port, scheme
         self.method, self.path, self.headers, self.content = method, path, headers, content
-        self.timestamp = timestamp or utils.timestamp()
+        self.timestamp_start = timestamp_start or utils.timestamp()
+        self.timestamp_end = max(timestamp_end or utils.timestamp(), timestamp_start)
         self.close = False
-        controller.Msg.__init__(self)
+        self.tcp_setup_timestamp = tcp_setup_timestamp
+        self.ssl_setup_timestamp = ssl_setup_timestamp
 
         # Have this request's cookies been modified by sticky cookies or auth?
         self.stickycookie = False
@@ -405,11 +360,15 @@ class Request(HTTPMsg):
         self.path = state["path"]
         self.headers = ODictCaseless._from_state(state["headers"])
         self.content = state["content"]
-        self.timestamp = state["timestamp"]
+        self.timestamp_start = state["timestamp_start"]
+        self.timestamp_end = state["timestamp_end"]
+        self.tcp_setup_timestamp = state["tcp_setup_timestamp"]
+        self.ssl_setup_timestamp = state["ssl_setup_timestamp"]
 
     def _get_state(self):
         return dict(
             client_conn = self.client_conn._get_state() if self.client_conn else None,
+            httpversion = self.httpversion,
             host = self.host,
             port = self.port,
             scheme = self.scheme,
@@ -417,13 +376,17 @@ class Request(HTTPMsg):
             path = self.path,
             headers = self.headers._get_state(),
             content = self.content,
-            timestamp = self.timestamp,
+            timestamp_start = self.timestamp_start,
+            timestamp_end = self.timestamp_end,
+            tcp_setup_timestamp = self.tcp_setup_timestamp,
+            ssl_setup_timestamp = self.ssl_setup_timestamp
         )
 
     @classmethod
     def _from_state(klass, state):
         return klass(
             ClientConnect._from_state(state["client_conn"]),
+            tuple(state["httpversion"]),
             str(state["host"]),
             state["port"],
             str(state["scheme"]),
@@ -431,21 +394,17 @@ class Request(HTTPMsg):
             str(state["path"]),
             ODictCaseless._from_state(state["headers"]),
             state["content"],
-            state["timestamp"]
+            state["timestamp_start"],
+            state["timestamp_end"],
+            state["tcp_setup_timestamp"],
+            state["ssl_setup_timestamp"]
         )
 
     def __hash__(self):
         return id(self)
 
-    def __eq__(self, other):
-        return self._get_state() == other._get_state()
-
     def copy(self):
-        """
-            Returns a copy of this object.
-        """
         c = copy.copy(self)
-        c.acked = True
         c.headers = self.headers.copy()
         return c
 
@@ -455,7 +414,7 @@ class Request(HTTPMsg):
             Returns an empty ODict if there is no data or the content-type
             indicates non-form data.
         """
-        if self.headers.in_any("content-type", HDR_FORM_URLENCODED, True):
+        if self.content and self.headers.in_any("content-type", HDR_FORM_URLENCODED, True):
             return ODict(utils.urldecode(self.content))
         return ODict([])
 
@@ -465,8 +424,30 @@ class Request(HTTPMsg):
             appropriate content-type header. Note that this will destory the
             existing body if there is one.
         """
+        # FIXME: If there's an existing content-type header indicating a
+        # url-encoded form, leave it alone.
         self.headers["Content-Type"] = [HDR_FORM_URLENCODED]
         self.content = utils.urlencode(odict.lst)
+
+    def get_path_components(self):
+        """
+            Returns the path components of the URL as a list of strings.
+
+            Components are unquoted.
+        """
+        _, _, path, _, _, _ = urlparse.urlparse(self.get_url())
+        return [urllib.unquote(i) for i in path.split("/") if i]
+
+    def set_path_components(self, lst):
+        """
+            Takes a list of strings, and sets the path component of the URL.
+
+            Components are quoted.
+        """
+        lst = [urllib.quote(i, safe="") for i in lst]
+        path = "/" + "/".join(lst)
+        scheme, netloc, _, params, query, fragment = urlparse.urlparse(self.get_url())
+        self.set_url(urlparse.urlunparse([scheme, netloc, path, params, query, fragment]))
 
     def get_query(self):
         """
@@ -485,11 +466,19 @@ class Request(HTTPMsg):
         query = utils.urlencode(odict.lst)
         self.set_url(urlparse.urlunparse([scheme, netloc, path, params, query, fragment]))
 
-    def get_url(self):
+    def get_url(self, hostheader=False):
         """
             Returns a URL string, constructed from the Request's URL compnents.
+
+            If hostheader is True, we use the value specified in the request
+            Host header to construct the URL.
         """
-        return utils.unparse_url(self.scheme, self.host, self.port, self.path)
+        if hostheader:
+            host = self.headers.get_first("host") or self.host
+        else:
+            host = self.host
+        host = host.encode("idna")
+        return utils.unparse_url(self.scheme, host, self.port, self.path).encode('ascii')
 
     def set_url(self, url):
         """
@@ -498,19 +487,37 @@ class Request(HTTPMsg):
 
             Returns False if the URL was invalid, True if the request succeeded.
         """
-        parts = utils.parse_url(url)
+        parts = http.parse_url(url)
         if not parts:
             return False
         self.scheme, self.host, self.port, self.path = parts
         return True
 
-    def _assemble(self, _proxy = False):
-        """
-            Assembles the request for transmission to the server. We make some
-            modifications to make sure interception works properly.
-        """
-        FMT = '%s %s HTTP/1.1\r\n%s\r\n%s'
-        FMT_PROXY = '%s %s://%s:%s%s HTTP/1.1\r\n%s\r\n%s'
+    def get_cookies(self):
+        cookie_headers = self.headers.get("cookie")
+        if not cookie_headers:
+            return None
+
+        cookies = []
+        for header in cookie_headers:
+            pairs = [pair.partition("=") for pair in header.split(';')]
+            cookies.extend((pair[0],(pair[2],{})) for pair in pairs)
+        return dict(cookies)
+
+    def get_header_size(self):
+        FMT = '%s %s HTTP/%s.%s\r\n%s\r\n'
+        assembled_header = FMT % (
+                self.method,
+                self.path,
+                self.httpversion[0],
+                self.httpversion[1],
+                str(self.headers)
+            )
+        return len(assembled_header)
+
+    def _assemble_head(self, proxy=False):
+        FMT = '%s %s HTTP/%s.%s\r\n%s\r\n'
+        FMT_PROXY = '%s %s://%s:%s%s HTTP/%s.%s\r\n%s\r\n'
 
         headers = self.headers.copy()
         utils.del_all(
@@ -519,23 +526,52 @@ class Request(HTTPMsg):
                 'proxy-connection',
                 'keep-alive',
                 'connection',
-                'content-length',
                 'transfer-encoding'
             ]
         )
         if not 'host' in headers:
             headers["host"] = [utils.hostport(self.scheme, self.host, self.port)]
         content = self.content
-        if content is None:
-            content = ""
+        if content:
+            headers["Content-Length"] = [str(len(content))]
         else:
-            headers["content-length"] = [str(len(content))]
+            content = ""
         if self.close:
             headers["connection"] = ["close"]
-        if not _proxy:
-            return FMT % (self.method, self.path, str(headers), content)
+        if not proxy:
+            return FMT % (
+                self.method,
+                self.path,
+                self.httpversion[0],
+                self.httpversion[1],
+                str(headers)
+            )
         else:
-            return FMT_PROXY % (self.method, self.scheme, self.host, self.port, self.path, str(headers), content)
+            return FMT_PROXY % (
+                self.method,
+                self.scheme,
+                self.host,
+                self.port,
+                self.path,
+                self.httpversion[0],
+                self.httpversion[1],
+                str(headers)
+            )
+
+    def _assemble(self, _proxy = False):
+        """
+            Assembles the request for transmission to the server. We make some
+            modifications to make sure interception works properly.
+
+            Returns None if the request cannot be assembled.
+        """
+        if self.content == CONTENT_MISSING:
+            return None
+        head = self._assemble_head(_proxy)
+        if self.content:
+            return head + self.content
+        else:
+            return head
 
     def replace(self, pattern, repl, *args, **kwargs):
         """
@@ -546,8 +582,8 @@ class Request(HTTPMsg):
             Returns the number of replacements made.
         """
         with decoded(self):
-            self.content, c = re.subn(pattern, repl, self.content, *args, **kwargs)
-        self.path, pc = re.subn(pattern, repl, self.path, *args, **kwargs)
+            self.content, c = utils.safe_subn(pattern, repl, self.content, *args, **kwargs)
+        self.path, pc = utils.safe_subn(pattern, repl, self.path, *args, **kwargs)
         c += pc
         c += self.headers.replace(pattern, repl, *args, **kwargs)
         return c
@@ -560,20 +596,29 @@ class Response(HTTPMsg):
         Exposes the following attributes:
 
             request: Request object.
+
             code: HTTP response code
+
             msg: HTTP response message
+
             headers: ODict object
-            content: Response content
-            timestamp: Seconds since the epoch
+
+            content: Content of the request, None, or CONTENT_MISSING if there
+            is content associated, but not present. CONTENT_MISSING evaluates
+            to False to make checking for the presence of content natural.
+
+            timestamp_start: Seconds since the epoch signifying response transmission started
+
+            timestamp_end: Seconds since the epoch signifying response transmission ended
     """
-    def __init__(self, request, code, msg, headers, content, der_cert, timestamp=None):
+    def __init__(self, request, httpversion, code, msg, headers, content, cert, timestamp_start=None, timestamp_end=None):
         assert isinstance(headers, ODictCaseless)
         self.request = request
-        self.code, self.msg = code, msg
+        self.httpversion, self.code, self.msg = httpversion, code, msg
         self.headers, self.content = headers, content
-        self.der_cert = der_cert
-        self.timestamp = timestamp or utils.timestamp()
-        controller.Msg.__init__(self)
+        self.cert = cert
+        self.timestamp_start = timestamp_start or utils.timestamp()
+        self.timestamp_end = timestamp_end or utils.timestamp()
         self.replay = False
 
     def _refresh_cookie(self, c, delta):
@@ -608,7 +653,7 @@ class Response(HTTPMsg):
         """
         if not now:
             now = time.time()
-        delta = now - self.timestamp
+        delta = now - self.timestamp_start
         refresh_headers = [
             "date",
             "expires",
@@ -640,71 +685,68 @@ class Response(HTTPMsg):
         self.msg = state["msg"]
         self.headers = ODictCaseless._from_state(state["headers"])
         self.content = state["content"]
-        self.timestamp = state["timestamp"]
-        self.der_cert = state["der_cert"]
-
-    def get_cert(self):
-        """
-            Returns a certutils.SSLCert object, or None.
-        """
-        if self.der_cert:
-            return certutils.SSLCert.from_der(self.der_cert)
+        self.timestamp_start = state["timestamp_start"]
+        self.timestamp_end = state["timestamp_end"]
+        self.cert = certutils.SSLCert.from_pem(state["cert"]) if state["cert"] else None
 
     def _get_state(self):
         return dict(
+            httpversion = self.httpversion,
             code = self.code,
             msg = self.msg,
             headers = self.headers._get_state(),
-            timestamp = self.timestamp,
-            der_cert = self.der_cert,
-            content = self.content
+            timestamp_start = self.timestamp_start,
+            timestamp_end = self.timestamp_end,
+            cert = self.cert.to_pem() if self.cert else None,
+            content = self.content,
         )
 
     @classmethod
     def _from_state(klass, request, state):
         return klass(
             request,
+            state["httpversion"],
             state["code"],
             str(state["msg"]),
             ODictCaseless._from_state(state["headers"]),
             state["content"],
-            state.get("der_cert"),
-            state["timestamp"],
+            certutils.SSLCert.from_pem(state["cert"]) if state["cert"] else None,
+            state["timestamp_start"],
+            state["timestamp_end"],
         )
 
-    def __eq__(self, other):
-        return self._get_state() == other._get_state()
-
     def copy(self):
-        """
-            Returns a copy of this object.
-        """
         c = copy.copy(self)
-        c.acked = True
         c.headers = self.headers.copy()
         return c
+
+    def _assemble_head(self):
+        FMT = '%s\r\n%s\r\n'
+        headers = self.headers.copy()
+        utils.del_all(
+            headers,
+            ['proxy-connection', 'transfer-encoding']
+        )
+        if self.content:
+            headers["Content-Length"] = [str(len(self.content))]
+        proto = "HTTP/%s.%s %s %s"%(self.httpversion[0], self.httpversion[1], self.code, str(self.msg))
+        data = (proto, str(headers))
+        return FMT%data
 
     def _assemble(self):
         """
             Assembles the response for transmission to the client. We make some
             modifications to make sure interception works properly.
+
+            Returns None if the request cannot be assembled.
         """
-        FMT = '%s\r\n%s\r\n%s'
-        headers = self.headers.copy()
-        utils.del_all(
-            headers,
-            ['proxy-connection', 'connection', 'keep-alive', 'transfer-encoding']
-        )
-        content = self.content
-        if content is None:
-            content = ""
+        if self.content == CONTENT_MISSING:
+            return None
+        head = self._assemble_head()
+        if self.content:
+            return head + self.content
         else:
-            headers["content-length"] = [str(len(content))]
-        if self.request.client_conn.close:
-            headers["connection"] = ["close"]
-        proto = "HTTP/1.1 %s %s"%(self.code, str(self.msg))
-        data = (proto, str(headers), content)
-        return FMT%data
+            return head
 
     def replace(self, pattern, repl, *args, **kwargs):
         """
@@ -715,12 +757,32 @@ class Response(HTTPMsg):
             Returns the number of replacements made.
         """
         with decoded(self):
-            self.content, c = re.subn(pattern, repl, self.content, *args, **kwargs)
+            self.content, c = utils.safe_subn(pattern, repl, self.content, *args, **kwargs)
         c += self.headers.replace(pattern, repl, *args, **kwargs)
         return c
 
+    def get_header_size(self):
+        FMT = '%s\r\n%s\r\n'
+        proto = "HTTP/%s.%s %s %s"%(self.httpversion[0], self.httpversion[1], self.code, str(self.msg))
+        assembled_header = FMT % (proto, str(self.headers))
+        return len(assembled_header)
 
-class ClientDisconnect(controller.Msg):
+    def get_cookies(self):
+        cookie_headers = self.headers.get("set-cookie")
+        if not cookie_headers:
+            return None
+
+        cookies = []
+        for header in cookie_headers:
+            pairs = [pair.partition("=") for pair in header.split(';')]
+            cookie_name = pairs[0][0] # the key of the first key/value pairs
+            cookie_value = pairs[0][2] # the value of the first key/value pairs
+            cookie_parameters = {key.strip().lower():value.strip() for key,sep,value in pairs[1:]}
+            cookies.append((cookie_name, (cookie_value, cookie_parameters)))
+        return dict(cookies)
+
+
+class ClientDisconnect:
     """
         A client disconnection event.
 
@@ -729,11 +791,10 @@ class ClientDisconnect(controller.Msg):
             client_conn: ClientConnect object.
     """
     def __init__(self, client_conn):
-        controller.Msg.__init__(self)
         self.client_conn = client_conn
 
 
-class ClientConnect(controller.Msg):
+class ClientConnect(StateObject):
     """
         A single client connection. Each connection can result in multiple HTTP
         Requests.
@@ -743,7 +804,7 @@ class ClientConnect(controller.Msg):
             address: (address, port) tuple, or None if the connection is replayed.
             requestcount: Number of requests created by this client connection.
             close: Is the client connection closed?
-            connection_error: Error string or None.
+            error: Error string or None.
     """
     def __init__(self, address):
         """
@@ -753,20 +814,22 @@ class ClientConnect(controller.Msg):
         self.address = address
         self.close = False
         self.requestcount = 0
-        self.connection_error = None
-        controller.Msg.__init__(self)
+        self.error = None
 
-    def __eq__(self, other):
-        return self._get_state() == other._get_state()
+    def __str__(self):
+        if self.address:
+            return "%s:%d"%(self.address[0],self.address[1])
 
     def _load_state(self, state):
         self.close = True
+        self.error = state["error"]
         self.requestcount = state["requestcount"]
 
     def _get_state(self):
         return dict(
             address = list(self.address),
             requestcount = self.requestcount,
+            error = self.error,
         )
 
     @classmethod
@@ -779,15 +842,10 @@ class ClientConnect(controller.Msg):
             return None
 
     def copy(self):
-        """
-            Returns a copy of this object.
-        """
-        c = copy.copy(self)
-        c.acked = True
-        return c
+        return copy.copy(self)
 
 
-class Error(controller.Msg):
+class Error(StateObject):
     """
         An Error.
 
@@ -805,18 +863,13 @@ class Error(controller.Msg):
     def __init__(self, request, msg, timestamp=None):
         self.request, self.msg = request, msg
         self.timestamp = timestamp or utils.timestamp()
-        controller.Msg.__init__(self)
 
     def _load_state(self, state):
         self.msg = state["msg"]
         self.timestamp = state["timestamp"]
 
     def copy(self):
-        """
-            Returns a copy of this object.
-        """
         c = copy.copy(self)
-        c.acked = True
         return c
 
     def _get_state(self):
@@ -833,9 +886,6 @@ class Error(controller.Msg):
             state["timestamp"],
         )
 
-    def __eq__(self, other):
-        return self._get_state() == other._get_state()
-
     def replace(self, pattern, repl, *args, **kwargs):
         """
             Replaces a regular expression pattern with repl in both the headers
@@ -844,7 +894,7 @@ class Error(controller.Msg):
 
             FIXME: Is replace useful on an Error object??
         """
-        self.msg, c = re.subn(pattern, repl, self.msg, *args, **kwargs)
+        self.msg, c = utils.safe_subn(pattern, repl, self.msg, *args, **kwargs)
         return c
 
 
@@ -875,12 +925,11 @@ class ClientPlaybackState:
         """
         if self.flows and not self.current:
             n = self.flows.pop(0)
+            n.request.reply = controller.DummyReply()
             n.request.client_conn = None
             self.current = master.handle_request(n.request)
             if not testing and not self.current.response:
-                #begin nocover
-                master.replay_request(self.current)
-                #end nocover
+                master.replay_request(self.current) # pragma: no cover
             elif self.current.response:
                 master.handle_response(self.current.response)
 
@@ -1110,7 +1159,14 @@ class Flow:
         """
             Match this flow against a compiled filter expression. Returns True
             if matched, False if not.
+
+            If f is a string, it will be compiled as a filter expression. If
+            the expression is invalid, ValueError is raised.
         """
+        if isinstance(f, basestring):
+            f = filt.parse(f)
+            if not f:
+                raise ValueError("Invalid filter expression.")
         if f:
             return f(self)
         return True
@@ -1120,10 +1176,11 @@ class Flow:
             Kill this request.
         """
         self.error = Error(self.request, "Connection killed")
-        if self.request and not self.request.acked:
-            self.request._ack(None)
-        elif self.response and not self.response.acked:
-            self.response._ack(None)
+        self.error.reply = controller.DummyReply()
+        if self.request and not self.request.reply.acked:
+            self.request.reply(proxy.KILL)
+        elif self.response and not self.response.reply.acked:
+            self.response.reply(proxy.KILL)
         master.handle_error(self.error)
         self.intercepting = False
 
@@ -1139,10 +1196,10 @@ class Flow:
             Continue with the flow - called after an intercept().
         """
         if self.request:
-            if not self.request.acked:
-                self.request._ack()
-            elif self.response and not self.response.acked:
-                self.response._ack()
+            if not self.request.reply.acked:
+                self.request.reply()
+            elif self.response and not self.response.reply.acked:
+                self.response.reply()
             self.intercepting = False
 
     def replace(self, pattern, repl, *args, **kwargs):
@@ -1265,7 +1322,7 @@ class State(object):
         if f.request in self._flow_map:
             del self._flow_map[f.request]
         self._flow_list.remove(f)
-        if f.match(self._limit):
+        if f in self.view:
             self.view.remove(f)
         return True
 
@@ -1305,6 +1362,22 @@ class FlowMaster(controller.Master):
         self.anticomp = False
         self.refresh_server_playback = False
         self.replacehooks = ReplaceHooks()
+        self.setheaders = SetHeaders()
+
+        self.stream = None
+        app.mapp.config["PMASTER"] = self
+
+    def start_app(self, domain, ip):
+        self.server.apps.add(
+            app.mapp,
+            domain,
+            80
+        )
+        self.server.apps.add(
+            app.mapp,
+            ip,
+            80
+        )
 
     def add_event(self, e, level="info"):
         """
@@ -1383,6 +1456,8 @@ class FlowMaster(controller.Master):
         self.kill_nonreplay = kill
 
     def stop_server_playback(self):
+        if self.server_playback.exit:
+            self.shutdown()
         self.server_playback = None
 
     def do_server_playback(self, flow):
@@ -1399,7 +1474,9 @@ class FlowMaster(controller.Master):
             flow.response = response
             if self.refresh_server_playback:
                 response.refresh()
-            flow.request._ack(response)
+            flow.request.reply(response)
+            if self.server_playback.count() == 0:
+                self.stop_server_playback()
             return True
         return None
 
@@ -1414,10 +1491,6 @@ class FlowMaster(controller.Master):
                 self.shutdown()
             self.client_playback.tick(self)
 
-        if self.server_playback:
-            if self.server_playback.exit and self.server_playback.count() == 0:
-                self.shutdown()
-
         return controller.Master.tick(self, q)
 
     def duplicate_flow(self, f):
@@ -1428,10 +1501,13 @@ class FlowMaster(controller.Master):
             Loads a flow, and returns a new flow object.
         """
         if f.request:
+            f.request.reply = controller.DummyReply()
             fr = self.handle_request(f.request)
         if f.response:
+            f.response.reply = controller.DummyReply()
             self.handle_response(f.response)
         if f.error:
+            f.error.reply = controller.DummyReply()
             self.handle_error(f.error)
         return fr
 
@@ -1459,23 +1535,24 @@ class FlowMaster(controller.Master):
                 if self.kill_nonreplay:
                     f.kill(self)
                 else:
-                    f.request._ack()
+                    f.request.reply()
 
     def process_new_response(self, f):
         if self.stickycookie_state:
             self.stickycookie_state.handle_response(f)
 
-    def replay_request(self, f):
+    def replay_request(self, f, block=False):
         """
             Returns None if successful, or error message if not.
         """
-        #begin nocover
         if f.intercepting:
             return "Can't replay while intercepting..."
+        if f.request.content == CONTENT_MISSING:
+            return "Can't replay request with missing content..."
         if f.request:
             f.request._set_replay()
             if f.request.content:
-                f.request.headers["content-length"] = [str(len(f.request.content))]
+                f.request.headers["Content-Length"] = [str(len(f.request.content))]
             f.response = None
             f.error = None
             self.process_new_request(f)
@@ -1484,8 +1561,9 @@ class FlowMaster(controller.Master):
                     f,
                     self.masterq,
                 )
-            rt.start()
-        #end nocover
+            rt.start() # pragma: no cover
+            if block:
+                rt.join()
 
     def run_script_hook(self, name, *args, **kwargs):
         if self.script and not self.pause_scripts:
@@ -1496,56 +1574,61 @@ class FlowMaster(controller.Master):
 
     def handle_clientconnect(self, cc):
         self.run_script_hook("clientconnect", cc)
-        self.add_event("Connect from: %s:%s"%cc.address)
-        cc._ack()
+        cc.reply()
 
     def handle_clientdisconnect(self, r):
         self.run_script_hook("clientdisconnect", r)
-        s = "Disconnect from: %s:%s"%r.client_conn.address
-        self.add_event(s)
-        if r.client_conn.requestcount:
-            s = "    -> handled %s requests"%r.client_conn.requestcount
-            self.add_event(s)
-        if r.client_conn.connection_error:
-            self.add_event(
-                "   -> error: %s"%r.client_conn.connection_error, "error"
-            )
-        r._ack()
+        r.reply()
 
     def handle_error(self, r):
         f = self.state.add_error(r)
-        self.replacehooks.run(f)
         if f:
             self.run_script_hook("error", f)
         if self.client_playback:
             self.client_playback.clear(f)
-        r._ack()
+        r.reply()
         return f
 
     def handle_request(self, r):
         f = self.state.add_request(r)
         self.replacehooks.run(f)
+        self.setheaders.run(f)
         self.run_script_hook("request", f)
         self.process_new_request(f)
         return f
 
     def handle_response(self, r):
         f = self.state.add_response(r)
-        self.replacehooks.run(f)
         if f:
+            self.replacehooks.run(f)
+            self.setheaders.run(f)
             self.run_script_hook("response", f)
-        if self.client_playback:
-            self.client_playback.clear(f)
-        if not f:
-            r._ack()
-        if f:
+            if self.client_playback:
+                self.client_playback.clear(f)
             self.process_new_response(f)
+            if self.stream:
+                self.stream.add(f)
+        else:
+            r.reply()
         return f
 
     def shutdown(self):
         if self.script:
             self.load_script(None)
         controller.Master.shutdown(self)
+        if self.stream:
+            for i in self.state._flow_list:
+                if not i.response:
+                    self.stream.add(i)
+            self.stop_stream()
+
+    def start_stream(self, fp, filt):
+        self.stream = FilteredFlowWriter(fp, filt)
+
+    def stop_stream(self):
+        self.stream.fo.close()
+        self.stream = None
+
 
 
 class FlowWriter:
@@ -1575,11 +1658,26 @@ class FlowReader:
         try:
             while 1:
                 data = tnetstring.load(self.fo)
+                if tuple(data["version"][:2]) != version.IVERSION[:2]:
+                    v = ".".join(str(i) for i in data["version"])
+                    raise FlowReadError("Incompatible serialized data version: %s"%v)
                 off = self.fo.tell()
                 yield Flow._from_state(data)
-        except ValueError:
+        except ValueError, v:
             # Error is due to EOF
             if self.fo.tell() == off and self.fo.read() == '':
                 return
             raise FlowReadError("Invalid data format.")
+
+
+class FilteredFlowWriter:
+    def __init__(self, fo, filt):
+        self.fo = fo
+        self.filt = filt
+
+    def add(self, f):
+        if self.filt and not f.match(self.filt):
+            return
+        d = f._get_state()
+        tnetstring.dump(d, self.fo)
 

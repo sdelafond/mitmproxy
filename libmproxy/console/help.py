@@ -1,18 +1,3 @@
-# Copyright (C) 2012  Aldo Cortesi
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 import urwid
 import common
 from .. import filt, version
@@ -31,21 +16,9 @@ class HelpView(urwid.ListBox):
             self.helptext()
         )
 
-    def keypress(self, size, key):
-        key = common.shortcuts(key)
-        if key == "q":
-            self.master.statusbar = self.state[0]
-            self.master.body = self.state[1]
-            self.master.header = self.state[2]
-            self.master.make_view()
-            return None
-        elif key == "?":
-            key = None
-        return urwid.ListBox.keypress(self, size, key)
-
     def helptext(self):
         text = []
-        text.append(urwid.Text([("head", "Keys for this view:\n")]))
+        text.append(urwid.Text([("head", "This view:\n")]))
         text.extend(self.help_context)
 
         text.append(urwid.Text([("head", "\n\nMovement:\n")]))
@@ -61,6 +34,7 @@ class HelpView(urwid.ListBox):
         text.append(urwid.Text([("head", "\n\nGlobal keys:\n")]))
         keys = [
             ("c", "client replay"),
+            ("H", "edit global header set patterns"),
             ("i", "set interception pattern"),
             ("M", "change global default display mode"),
                 (None,
@@ -68,8 +42,12 @@ class HelpView(urwid.ListBox):
                     [("text", ": automatic detection")]
                 ),
                 (None,
-                    common.highlight_key("hex", "h") +
+                    common.highlight_key("hex", "e") +
                     [("text", ": Hex")]
+                ),
+                (None,
+                    common.highlight_key("html", "h") +
+                    [("text", ": HTML")]
                 ),
                 (None,
                     common.highlight_key("image", "i") +
@@ -95,6 +73,10 @@ class HelpView(urwid.ListBox):
                     common.highlight_key("xml", "x") +
                     [("text", ": XML")]
                 ),
+                (None,
+                    common.highlight_key("amf", "f") +
+                    [("text", ": AMF (requires PyAMF)")]
+                ),
             ("o", "toggle options:"),
                 (None,
                     common.highlight_key("anticache", "a") +
@@ -103,6 +85,10 @@ class HelpView(urwid.ListBox):
                 (None,
                     common.highlight_key("anticomp", "c") +
                     [("text", ": prevent compressed responses")]
+                ),
+                (None,
+                    common.highlight_key("showhost", "h") +
+                    [("text", ": use Host header for URL display")]
                 ),
                 (None,
                     common.highlight_key("killextra", "k") +
@@ -174,3 +160,14 @@ class HelpView(urwid.ListBox):
         text.extend(common.format_keyvals(examples, key="key", val="text", indent=4))
         return text
 
+    def keypress(self, size, key):
+        key = common.shortcuts(key)
+        if key == "q":
+            self.master.statusbar = self.state[0]
+            self.master.body = self.state[1]
+            self.master.header = self.state[2]
+            self.master.make_view()
+            return None
+        elif key == "?":
+            key = None
+        return urwid.ListBox.keypress(self, size, key)

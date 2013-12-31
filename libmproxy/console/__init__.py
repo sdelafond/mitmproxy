@@ -1,19 +1,4 @@
-# Copyright (C) 2010  Aldo Cortesi
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-import mailcap, mimetypes, tempfile, os, subprocess, glob, time, shlex
+import mailcap, mimetypes, tempfile, os, subprocess, glob, time, shlex, stat
 import os.path, sys, weakref
 import urwid
 from .. import controller, utils, flow
@@ -23,8 +8,6 @@ EVENTLOG_SIZE = 500
 
 
 class Stop(Exception): pass
-
-
 
 
 class _PathCompleter:
@@ -94,14 +77,17 @@ class PathEdit(urwid.Edit, _PathCompleter):
 class ActionBar(common.WWrap):
     def __init__(self):
         self.message("")
+        self.expire = None
 
     def selectable(self):
         return True
 
     def path_prompt(self, prompt, text):
+        self.expire = None
         self.w = PathEdit(prompt, text)
 
     def prompt(self, prompt, text = ""):
+        self.expire = None
         # A (partial) workaround for this Urwid issue:
         # https://github.com/Nic0/tyrs/issues/115
         # We can remove it once veryone is beyond 1.0.1
@@ -109,14 +95,14 @@ class ActionBar(common.WWrap):
             prompt = unicode(prompt)
         self.w = urwid.Edit(prompt, text or "")
 
-    def message(self, message):
+    def message(self, message, expire=None):
+        self.expire = expire
         self.w = urwid.Text(message)
 
 
 class StatusBar(common.WWrap):
     def __init__(self, master, helptext):
         self.master, self.helptext = master, helptext
-        self.expire = None
         self.ab = ActionBar()
         self.ib = common.WWrap(urwid.Text(""))
         self.w = urwid.Pile([self.ib, self.ab])
@@ -124,6 +110,10 @@ class StatusBar(common.WWrap):
     def get_status(self):
         r = []
 
+        if self.master.setheaders.count():
+            r.append("[")
+            r.append(("heading_key", "H"))
+            r.append("eaders]")
         if self.master.replacehooks.count():
             r.append("[")
             r.append(("heading_key", "R"))
@@ -159,22 +149,26 @@ class StatusBar(common.WWrap):
             r.append("[")
             r.append(("heading_key", "P"))
             r.append(":%s]"%utils.unparse_url(*self.master.server.config.reverse_proxy))
-        if self.master.state.default_body_view != contentview.VIEW_AUTO:
+        if self.master.state.default_body_view.name != "Auto":
             r.append("[")
             r.append(("heading_key", "M"))
-            r.append(":%s]"%contentview.VIEW_NAMES[self.master.state.default_body_view])
+            r.append(":%s]"%self.master.state.default_body_view.name)
 
         opts = []
         if self.master.anticache:
             opts.append("anticache")
         if self.master.anticomp:
             opts.append("anticomp")
+        if self.master.showhost:
+            opts.append("showhost")
         if not self.master.refresh_server_playback:
             opts.append("norefresh")
         if self.master.killextra:
             opts.append("killextra")
-        if self.master.server.config.upstream_cert:
-            opts.append("upstream-cert")
+        if self.master.server.config.no_upstream_cert:
+            opts.append("no-upstream-cert")
+        if self.master.state.follow_focus:
+            opts.append("following")
 
         if opts:
             r.append("[%s]"%(":".join(opts)))
@@ -185,22 +179,23 @@ class StatusBar(common.WWrap):
         if self.master.debug:
             r.append("[lt:%0.3f]"%self.master.looptime)
 
+        if self.master.stream:
+            r.append("[W:%s]"%self.master.stream_path)
+
         return r
 
     def redraw(self):
-        if self.expire and time.time() > self.expire:
+        if self.ab.expire and time.time() > self.ab.expire:
             self.message("")
 
         fc = self.master.state.flow_count()
-        if self.master.currentflow:
-            idx = self.master.state.view.index(self.master.currentflow) + 1
-            t = [
-                ('heading', ("[%s/%s]"%(idx, fc)).ljust(9))
-            ]
+        if self.master.state.focus is None:
+            offset = 0
         else:
-            t = [
-                ('heading', ("[%s]"%fc).ljust(9))
-            ]
+            offset = min(self.master.state.focus + 1, fc)
+        t = [
+            ('heading', ("[%s/%s]"%(offset, fc)).ljust(9))
+        ]
 
         if self.master.server.bound:
             boundaddr = "[%s:%s]"%(self.master.server.address or "*", self.master.server.port)
@@ -238,10 +233,8 @@ class StatusBar(common.WWrap):
 
     def message(self, msg, expire=None):
         if expire:
-            self.expire = time.time() + float(expire)/1000
-        else:
-            self.expire = None
-        self.ab.message(msg)
+            expire = time.time() + float(expire)/1000
+        self.ab.message(msg, expire)
         self.master.drawscreen()
 
 
@@ -251,8 +244,12 @@ class ConsoleState(flow.State):
     def __init__(self):
         flow.State.__init__(self)
         self.focus = None
-        self.default_body_view = contentview.VIEW_AUTO
+        self.follow_focus = None
+        self.default_body_view = contentview.get("Auto")
+
+        self.view_mode = common.VIEW_LIST
         self.view_flow_mode = common.VIEW_FLOW_REQUEST
+
         self.last_script = ""
         self.last_saveload = ""
         self.flowsettings = weakref.WeakKeyDictionary()
@@ -269,6 +266,8 @@ class ConsoleState(flow.State):
         f = flow.State.add_request(self, req)
         if self.focus is None:
             self.set_focus(0)
+        elif self.follow_focus:
+            self.set_focus(len(self.view) - 1)
         return f
 
     def add_response(self, resp):
@@ -295,6 +294,9 @@ class ConsoleState(flow.State):
                 idx = 0
             self.focus = idx
 
+    def set_focus_flow(self, f):
+        self.set_focus(self.view.index(f))
+
     def get_from_pos(self, pos):
         if len(self.view) <= pos or pos < 0:
             return None, None
@@ -307,6 +309,10 @@ class ConsoleState(flow.State):
         return self.get_from_pos(pos-1)
 
     def delete_flow(self, f):
+        if f in self.view and self.view.index(f) <= self.focus:
+            self.focus -= 1
+        if self.focus < 0:
+            self.focus = None
         ret = flow.State.delete_flow(self, f)
         self.set_focus(self.focus)
         return ret
@@ -314,7 +320,10 @@ class ConsoleState(flow.State):
 
 
 class Options(object):
-    __slots__ = [
+    attributes = [
+        "app",
+        "app_domain",
+        "app_ip",
         "anticache",
         "anticomp",
         "client_replay",
@@ -327,19 +336,22 @@ class Options(object):
         "refresh_server_playback",
         "rfile",
         "script",
+        "showhost",
         "replacements",
         "rheaders",
+        "setheaders",
         "server_replay",
         "stickycookie",
         "stickyauth",
         "verbosity",
         "wfile",
         "nopop",
+        "palette",
     ]
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
-        for i in self.__slots__:
+        for i in self.attributes:
             if not hasattr(self, i):
                 setattr(self, i, None)
 
@@ -352,13 +364,17 @@ class ConsoleMaster(flow.FlowMaster):
     def __init__(self, server, options):
         flow.FlowMaster.__init__(self, server, ConsoleState())
         self.looptime = 0
+        self.stream_path = None
         self.options = options
 
         for i in options.replacements:
             self.replacehooks.add(*i)
 
+        for i in options.setheaders:
+            self.setheaders.add(*i)
+
         self.flow_list_walker = None
-        self.set_palette()
+        self.set_palette(options.palette)
 
         r = self.set_intercept(options.intercept)
         if r:
@@ -381,6 +397,7 @@ class ConsoleMaster(flow.FlowMaster):
         self.killextra = options.kill
         self.rheaders = options.rheaders
         self.nopop = options.nopop
+        self.showhost = options.showhost
 
         self.eventlog = options.eventlog
         self.eventlist = urwid.SimpleListWalker([])
@@ -399,20 +416,49 @@ class ConsoleMaster(flow.FlowMaster):
                 print >> sys.stderr, "Script load error:", err
                 sys.exit(1)
 
+        if options.wfile:
+            err = self.start_stream(options.wfile)
+            if err:
+                print >> sys.stderr, "Script load error:", err
+                sys.exit(1)
+
+        if options.app:
+            self.start_app(options.app_domain, options.app_ip)
+
+    def start_stream(self, path):
+        path = os.path.expanduser(path)
+        try:
+            f = file(path, "wb")
+            flow.FlowMaster.start_stream(self, f, None)
+        except IOError, v:
+            return str(v)
+        self.stream_path = path
+
+
+    def _run_script_method(self, method, s, f):
+        status, val = s.run(method, f)
+        if val:
+            if status:
+                self.add_event("Method %s return: %s"%(method, val))
+            else:
+                self.add_event("Method %s error: %s"%(method, val[1]))
+
     def run_script_once(self, path, f):
         if not path:
             return
+        self.add_event("Running script on flow: %s"%path)
         ret = self.get_script(path)
         if ret[0]:
-            self.statusbar.message(ret[0])
+            self.statusbar.message("Error loading script.")
+            self.add_event("Error loading script:\n%s"%ret[0])
             return
         s = ret[1]
         if f.request:
-            s.run("request", f)
+            self._run_script_method("request", s, f)
         if f.response:
-            s.run("response", f)
+            self._run_script_method("response", s, f)
         if f.error:
-            s.run("error", f)
+            self._run_script_method("error", s, f)
         s.run("done")
         self.refresh_flow(f)
         self.state.last_script = path
@@ -432,7 +478,7 @@ class ConsoleMaster(flow.FlowMaster):
     def _readflow(self, path):
         path = os.path.expanduser(path)
         try:
-            f = file(path, "r")
+            f = file(path, "rb")
             flows = list(flow.FlowReader(f).stream())
         except (IOError, flow.FlowReadError), v:
             return True, v.strerror
@@ -461,7 +507,7 @@ class ConsoleMaster(flow.FlowMaster):
         os.write(fd, data)
         os.close(fd)
         c = os.environ.get("EDITOR")
-        #If no EDITOR is set, assume 'vi'
+        # if no EDITOR is set, assume 'vi'
         if not c:
             c = "vi"
         cmd = shlex.split(c)
@@ -470,23 +516,25 @@ class ConsoleMaster(flow.FlowMaster):
         try:
             subprocess.call(cmd)
         except:
-            self.statusbar.message("Can't start editor: %s" % c)
-            self.ui.start()
-            os.unlink(name)
-            return data
+            self.statusbar.message("Can't start editor: %s" % " ".join(c))
+        else:
+            data = open(name,"rb").read()
         self.ui.start()
-        data = open(name).read()
         os.unlink(name)
         return data
 
     def spawn_external_viewer(self, data, contenttype):
         if contenttype:
+            contenttype = contenttype.split(";")[0]
             ext = mimetypes.guess_extension(contenttype) or ""
         else:
             ext = ""
         fd, name = tempfile.mkstemp(ext, "mproxy")
         os.write(fd, data)
         os.close(fd)
+
+        # read-only to remind the user that this is a view function
+        os.chmod(name, stat.S_IREAD)
 
         cmd = None
         shell = False
@@ -497,19 +545,24 @@ class ConsoleMaster(flow.FlowMaster):
             if cmd:
                 shell = True
         if not cmd:
+            # hm which one should get priority?
             c = os.environ.get("PAGER") or os.environ.get("EDITOR")
-            cmd = [c, name]
+            if not c:
+                c = "less"
+            cmd = shlex.split(c)
+            cmd.append(name)
         self.ui.stop()
-        subprocess.call(cmd, shell=shell)
+        try:
+            subprocess.call(cmd, shell=shell)
+        except:
+            self.statusbar.message("Can't start external viewer: %s" % " ".join(c))
         self.ui.start()
         os.unlink(name)
 
-    def set_palette(self):
-        self.palette = palettes.dark
+    def set_palette(self, name):
+        self.palette = palettes.palettes[name]
 
     def run(self):
-        self.currentflow = None
-
         self.ui = urwid.raw_display.Screen()
         self.ui.set_terminal_properties(256)
         self.ui.register_palette(self.palette)
@@ -526,11 +579,13 @@ class ConsoleMaster(flow.FlowMaster):
 
         self.view_flowlist()
 
-        self.server.start_slave(controller.Slave, self.masterq)
+        self.server.start_slave(controller.Slave, controller.Channel(self.masterq))
 
         if self.options.rfile:
             ret = self.load_flows(self.options.rfile)
-            if ret:
+            if ret and self.state.flow_count():
+                self.add_event("File truncated or corrupted. Loaded as many flows as possible.")
+            elif not self.state.flow_count():
                 self.shutdown()
                 print >> sys.stderr, "Could not load file:", ret
                 sys.exit(1)
@@ -540,13 +595,6 @@ class ConsoleMaster(flow.FlowMaster):
         print >> sys.stderr, "Shutting down..."
         sys.stderr.flush()
         self.shutdown()
-
-    def focus_current(self):
-        if self.currentflow:
-            try:
-                self.flow_list_walker.set_focus(self.state.index(self.currentflow))
-            except (IndexError, ValueError):
-                pass
 
     def make_view(self):
         self.view = urwid.Frame(
@@ -573,21 +621,23 @@ class ConsoleMaster(flow.FlowMaster):
     def view_grideditor(self, ge):
         self.body = ge
         self.header = None
-        self.help_context = grideditor.help_context
+        self.help_context = ge.make_help()
         self.statusbar = StatusBar(self, grideditor.footer)
         self.make_view()
 
     def view_flowlist(self):
         if self.ui.started:
             self.ui.clear()
-        self.focus_current()
+        if self.state.follow_focus:
+            self.state.set_focus(self.state.flow_count())
+
         if self.eventlog:
             self.body = flowlist.BodyPile(self)
         else:
             self.body = flowlist.FlowListBox(self)
         self.statusbar = StatusBar(self, flowlist.footer)
         self.header = None
-        self.currentflow = None
+        self.state.view_mode = common.VIEW_LIST
 
         self.make_view()
         self.help_context = flowlist.help_context
@@ -596,7 +646,8 @@ class ConsoleMaster(flow.FlowMaster):
         self.body = flowview.FlowView(self, self.state, flow)
         self.header = flowview.FlowViewHeader(self, flow)
         self.statusbar = StatusBar(self, flowview.footer)
-        self.currentflow = flow
+        self.state.set_focus_flow(flow)
+        self.state.view_mode = common.VIEW_FLOW
 
         self.make_view()
         self.help_context = flowview.help_context
@@ -631,18 +682,19 @@ class ConsoleMaster(flow.FlowMaster):
         self.state.last_saveload = path
         path = os.path.expanduser(path)
         try:
-            f = file(path, "r")
+            f = file(path, "rb")
             fr = flow.FlowReader(f)
         except IOError, v:
             return v.strerror
+        reterr = None
         try:
             flow.FlowMaster.load_flows(self, fr)
         except flow.FlowReadError, v:
-            return v.strerror
+            reterr = v.strerror
         f.close()
         if self.flow_list_walker:
             self.sync_list_view()
-            self.focus_current()
+        return reterr
 
     def path_prompt(self, prompt, text, callback, *args):
         self.statusbar.path_prompt(prompt, text)
@@ -705,10 +757,9 @@ class ConsoleMaster(flow.FlowMaster):
         return self.state.set_intercept(txt)
 
     def change_default_display_mode(self, t):
-        v = contentview.VIEW_SHORTCUTS.get(t)
+        v = contentview.get_by_shortcut(t)
         self.state.default_body_view = v
-        if self.currentflow:
-            self.refresh_flow(self.currentflow)
+        self.refresh_focus()
 
     def set_reverse_proxy(self, txt):
         if not txt:
@@ -726,15 +777,10 @@ class ConsoleMaster(flow.FlowMaster):
         return size
 
     def pop_view(self):
-        if self.currentflow:
-            self.view_flow(self.currentflow)
+        if self.state.view_mode == common.VIEW_FLOW:
+            self.view_flow(self.state.view[self.state.focus])
         else:
             self.view_flowlist()
-
-    def set_replace(self, r):
-        self.replacehooks.clear()
-        for i in r:
-            self.replacehooks.add(*i)
 
     def loop(self):
         changed = True
@@ -784,6 +830,14 @@ class ConsoleMaster(flow.FlowMaster):
                                         ),
                                         self.stop_client_playback_prompt,
                                     )
+                            elif k == "H":
+                                self.view_grideditor(
+                                    grideditor.SetHeadersEditor(
+                                        self,
+                                        self.setheaders.get_specs(),
+                                        self.setheaders.set
+                                    )
+                                )
                             elif k == "i":
                                 self.prompt(
                                     "Intercept filter: ",
@@ -804,7 +858,7 @@ class ConsoleMaster(flow.FlowMaster):
                             elif k == "M":
                                 self.prompt_onekey(
                                     "Global default display mode",
-                                    contentview.VIEW_PROMPT,
+                                    contentview.view_prompts,
                                     self.change_default_display_mode
                                 )
                             elif k == "P":
@@ -822,7 +876,7 @@ class ConsoleMaster(flow.FlowMaster):
                                     grideditor.ReplaceEditor(
                                         self,
                                         self.replacehooks.get_specs(),
-                                        self.set_replace
+                                        self.replacehooks.set
                                     )
                                 )
                             elif k == "s":
@@ -837,7 +891,7 @@ class ConsoleMaster(flow.FlowMaster):
                             elif k == "S":
                                 if not self.server_playback:
                                     self.path_prompt(
-                                        "Server replay: ",
+                                        "Server replay path: ",
                                         self.state.last_saveload,
                                         self.server_playback_path
                                     )
@@ -856,9 +910,10 @@ class ConsoleMaster(flow.FlowMaster):
                                         (
                                             ("anticache", "a"),
                                             ("anticomp", "c"),
+                                            ("showhost", "h"),
                                             ("killextra", "k"),
                                             ("norefresh", "n"),
-                                            ("upstream-certs", "u"),
+                                            ("no-upstream-certs", "u"),
                                         ),
                                         self._change_options
                                 )
@@ -895,16 +950,20 @@ class ConsoleMaster(flow.FlowMaster):
             self.anticache = not self.anticache
         if a == "c":
             self.anticomp = not self.anticomp
+        if a == "h":
+            self.showhost = not self.showhost
+            self.sync_list_view()
+            self.refresh_focus()
         elif a == "k":
             self.killextra = not self.killextra
         elif a == "n":
             self.refresh_server_playback = not self.refresh_server_playback
         elif a == "u":
-            self.server.config.upstream_cert = not self.server.config.upstream_cert
+            self.server.config.no_upstream_cert = not self.server.config.no_upstream_cert
 
     def shutdown(self):
         self.state.killall(self)
-        controller.Master.shutdown(self)
+        flow.FlowMaster.shutdown(self)
 
     def sync_list_view(self):
         self.flow_list_walker._modified()
@@ -913,9 +972,21 @@ class ConsoleMaster(flow.FlowMaster):
         self.state.clear()
         self.sync_list_view()
 
+    def toggle_follow_flows(self):
+        # toggle flow follow
+        self.state.follow_focus = not self.state.follow_focus
+        # jump to most recent flow if follow is now on
+        if self.state.follow_focus:
+            self.state.set_focus(self.state.flow_count())
+            self.sync_list_view()
+
     def delete_flow(self, f):
         self.state.delete_flow(f)
         self.sync_list_view()
+
+    def refresh_focus(self):
+        if self.state.view:
+            self.refresh_flow(self.state.view[self.state.focus])
 
     def refresh_flow(self, c):
         if hasattr(self.header, "refresh_flow"):
@@ -929,7 +1000,7 @@ class ConsoleMaster(flow.FlowMaster):
         if self.state.intercept and f.match(self.state.intercept) and not f.request.is_replay():
             f.intercept()
         else:
-            r._ack()
+            r.reply()
         self.sync_list_view()
         self.refresh_flow(f)
 
@@ -938,16 +1009,20 @@ class ConsoleMaster(flow.FlowMaster):
 
     def add_event(self, e, level="info"):
         if level == "info":
-            e = urwid.Text(e)
+            e = urwid.Text(str(e))
         elif level == "error":
-            e = urwid.Text(("error", e))
+            e = urwid.Text(("error", str(e)))
 
         self.eventlist.append(e)
         if len(self.eventlist) > EVENTLOG_SIZE:
             self.eventlist.pop(0)
-        self.eventlist.set_focus(len(self.eventlist))
+        self.eventlist.set_focus(len(self.eventlist)-1)
 
     # Handlers
+    def handle_log(self, l):
+        self.add_event(l.msg)
+        l.reply()
+
     def handle_error(self, r):
         f = flow.FlowMaster.handle_error(self, r)
         if f:

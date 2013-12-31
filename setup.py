@@ -79,7 +79,7 @@ setup(
         package_data = package_data,
         scripts = ["mitmproxy", "mitmdump"],
         classifiers = [
-            "License :: OSI Approved :: GNU General Public License (GPL)",
+            "License :: OSI Approved :: MIT License",
             "Development Status :: 5 - Production/Stable",
             "Environment :: Console",
             "Environment :: Console :: Curses",
@@ -92,5 +92,13 @@ setup(
             "Topic :: Internet :: Proxy Servers",
             "Topic :: Software Development :: Testing"
         ],
-        install_requires=['urwid>=1.0', 'pyasn1', 'pyopenssl>=0.12', "PIL", "lxml"],
+        install_requires=[
+            "netlib>=%s"%version.VERSION,
+            "urwid>=1.1",
+            "pyasn1>0.1.2",
+            "pyopenssl>=0.13",
+            "PIL",
+            "lxml",
+            "flask"
+        ],
 )
