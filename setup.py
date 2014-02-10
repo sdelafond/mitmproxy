@@ -1,6 +1,6 @@
 from distutils.core import setup
 import fnmatch, os.path
-from libmproxy import version
+from netlib import version
 
 def _fnmatch(name, patternList):
     for i in patternList:
@@ -65,40 +65,28 @@ def findPackages(path, dataExclude=[]):
     return packages, package_data
 
 
-long_description = file("README.txt").read()
-packages, package_data = findPackages("libmproxy")
+long_description = file("README.mkd", "rb").read()
+packages, package_data = findPackages("netlib")
 setup(
-        name = "mitmproxy",
+        name = "netlib",
         version = version.VERSION,
-        description = "An interactive, SSL-capable, man-in-the-middle HTTP proxy for penetration testers and software developers.",
+        description = "A collection of network utilities used by pathod and mitmproxy.",
         long_description = long_description,
         author = "Aldo Cortesi",
         author_email = "aldo@corte.si",
-        url = "http://mitmproxy.org",
+        url = "http://github.com/mitmproxy/netlib",
         packages = packages,
         package_data = package_data,
-        scripts = ["mitmproxy", "mitmdump"],
         classifiers = [
             "License :: OSI Approved :: MIT License",
-            "Development Status :: 5 - Production/Stable",
-            "Environment :: Console",
-            "Environment :: Console :: Curses",
-            "Operating System :: MacOS :: MacOS X",
+            "Development Status :: 3 - Alpha",
             "Operating System :: POSIX",
             "Programming Language :: Python",
-            "Topic :: Security",
             "Topic :: Internet",
+            "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+            "Topic :: Software Development :: Testing",
+            "Topic :: Software Development :: Testing :: Traffic Generation",
             "Topic :: Internet :: WWW/HTTP",
-            "Topic :: Internet :: Proxy Servers",
-            "Topic :: Software Development :: Testing"
         ],
-        install_requires=[
-            "netlib>=%s"%version.VERSION,
-            "urwid>=1.1",
-            "pyasn1>0.1.2",
-            "pyopenssl>=0.13",
-            "PIL",
-            "lxml",
-            "flask"
-        ],
+        install_requires=["pyasn1>0.1.2", "pyopenssl>=0.12"],
 )
