@@ -1,6 +1,12 @@
 from distutils.core import setup
 import fnmatch, os.path
-from netlib import version
+from libmproxy import version
+
+
+def pdir():
+    dirname, _ = os.path.split(__file__)
+    return os.path.abspath(dirname)
+
 
 def _fnmatch(name, patternList):
     for i in patternList:
@@ -65,28 +71,40 @@ def findPackages(path, dataExclude=[]):
     return packages, package_data
 
 
-long_description = file("README.mkd", "rb").read()
-packages, package_data = findPackages("netlib")
+long_description = file(os.path.join(pdir(), "README.txt")).read()
+packages, package_data = findPackages("libmproxy")
 setup(
-        name = "netlib",
+        name = "mitmproxy",
         version = version.VERSION,
-        description = "A collection of network utilities used by pathod and mitmproxy.",
+        description = "An interactive, SSL-capable, man-in-the-middle HTTP proxy for penetration testers and software developers.",
         long_description = long_description,
         author = "Aldo Cortesi",
         author_email = "aldo@corte.si",
-        url = "http://github.com/mitmproxy/netlib",
+        url = "http://mitmproxy.org",
         packages = packages,
         package_data = package_data,
+        scripts = ["mitmproxy", "mitmdump"],
         classifiers = [
             "License :: OSI Approved :: MIT License",
-            "Development Status :: 3 - Alpha",
+            "Development Status :: 5 - Production/Stable",
+            "Environment :: Console",
+            "Environment :: Console :: Curses",
+            "Operating System :: MacOS :: MacOS X",
             "Operating System :: POSIX",
             "Programming Language :: Python",
+            "Topic :: Security",
             "Topic :: Internet",
-            "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
-            "Topic :: Software Development :: Testing",
-            "Topic :: Software Development :: Testing :: Traffic Generation",
             "Topic :: Internet :: WWW/HTTP",
+            "Topic :: Internet :: Proxy Servers",
+            "Topic :: Software Development :: Testing"
         ],
-        install_requires=["pyasn1>0.1.2", "pyopenssl>=0.12"],
+        install_requires=[
+            "netlib>=%s"%version.VERSION,
+            "urwid>=1.1",
+            "pyasn1>0.1.2",
+            "pyopenssl>=0.13",
+            "Pillow>=2.3.0,<2.4",
+            "lxml",
+            "flask"
+        ],
 )

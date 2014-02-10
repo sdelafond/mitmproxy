@@ -3,8 +3,15 @@ MANIFEST
 /dist
 /tmp
 /doc
+/venv
+/libmproxy/gui
+/release/build
 *.py[cdo]
 *.swp
 *.swo
+mitmproxyc
+mitmdumpc
 .coverage
 .idea
+netlib
+libpathod
