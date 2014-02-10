@@ -8,8 +8,9 @@ class DumpError(Exception): pass
 class Options(object):
     attributes = [
         "app",
-        "app_domain",
-        "app_ip",
+        "app_external",
+        "app_host",
+        "app_port",
         "anticache",
         "anticomp",
         "client_replay",
@@ -24,7 +25,7 @@ class Options(object):
         "rheaders",
         "setheaders",
         "server_replay",
-        "script",
+        "scripts",
         "showhost",
         "stickycookie",
         "stickyauth",
@@ -109,8 +110,9 @@ class DumpMaster(flow.FlowMaster):
                 not options.keepserving
             )
 
-        if options.script:
-            err = self.load_script(options.script)
+        scripts = options.scripts or []
+        for command in scripts:
+            err = self.load_script(command)
             if err:
                 raise DumpError(err)
 
@@ -127,7 +129,7 @@ class DumpMaster(flow.FlowMaster):
                 self.add_event("Flow file corrupted. Stopped loading.")
 
         if self.o.app:
-            self.start_app(self.o.app_domain, self.o.app_ip)
+            self.start_app(self.o.app_host, self.o.app_port, self.o.app_external)
 
     def _readflow(self, path):
         path = os.path.expanduser(path)
@@ -221,8 +223,8 @@ class DumpMaster(flow.FlowMaster):
 
     def run(self):  # pragma: no cover
         if self.o.rfile and not self.o.keepserving:
-            if self.script:
-                self.load_script(None)
+            for script in self.scripts:
+                self.unload_script(script)
             return
         try:
             return flow.FlowMaster.run(self)

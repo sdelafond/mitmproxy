@@ -1,6 +1,7 @@
 import argparse
 from libmproxy import cmdline
 import tutils
+import os.path
 
 
 def test_parse_replace_hook():
@@ -38,7 +39,6 @@ def test_parse_replace_hook():
 def test_parse_setheaders():
     x = cmdline.parse_setheader("/foo/bar/voing")
     assert x == ("foo", "bar", "voing")
-
 
 def test_common():
     parser = argparse.ArgumentParser()

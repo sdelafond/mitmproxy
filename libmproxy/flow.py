@@ -2,11 +2,11 @@
     This module provides more sophisticated flow tracking. These match requests
     with their responses, and provide filtering and interception facilities.
 """
-import hashlib, Cookie, cookielib, copy, re, urlparse, os
+import hashlib, Cookie, cookielib, copy, re, urlparse, threading
 import time, urllib
 import tnetstring, filt, script, utils, encoding, proxy
 from email.utils import parsedate_tz, formatdate, mktime_tz
-from netlib import odict, http, certutils
+from netlib import odict, http, certutils, wsgi
 import controller, version
 import app
 
@@ -15,6 +15,28 @@ CONTENT_MISSING = 0
 
 ODict = odict.ODict
 ODictCaseless = odict.ODictCaseless
+
+
+class AppRegistry:
+    def __init__(self):
+        self.apps = {}
+
+    def add(self, app, domain, port):
+        """
+            Add a WSGI app to the registry, to be served for requests to the
+            specified domain, on the specified port.
+        """
+        self.apps[(domain, port)] = wsgi.WSGIAdaptor(app, domain, port, version.NAMEVERSION)
+
+    def get(self, request):
+        """
+            Returns an WSGIAdaptor instance if request matches an app, or None.
+        """
+        if (request.host, request.port) in self.apps:
+            return self.apps[(request.host, request.port)]
+        if "host" in request.headers:
+            host = request.headers["host"][0]
+            return self.apps.get((host, request.port), None)
 
 
 class ReplaceHooks:
@@ -119,39 +141,6 @@ class SetHeaders:
                     f.response.headers.add(header, value)
                 else:
                     f.request.headers.add(header, value)
-
-
-class ScriptContext:
-    def __init__(self, master):
-        self._master = master
-
-    def log(self, *args, **kwargs):
-        """
-            Logs an event.
-
-            How this is handled depends on the front-end. mitmdump will display
-            events if the eventlog flag ("-e") was passed. mitmproxy sends
-            output to the eventlog for display ("v" keyboard shortcut).
-        """
-        self._master.add_event(*args, **kwargs)
-
-    def duplicate_flow(self, f):
-        """
-            Returns a duplicate of the specified flow. The flow is also
-            injected into the current state, and is ready for editing, replay,
-            etc.
-        """
-        self._master.pause_scripts = True
-        f = self._master.duplicate_flow(f)
-        self._master.pause_scripts = False
-        return f
-
-    def replay_request(self, f):
-        """
-            Replay the request on the current flow. The response will be added
-            to the flow object.
-        """
-        self._master.replay_request(f)
 
 
 class decoded(object):
@@ -288,7 +277,11 @@ class Request(HTTPMsg):
             (or None, if request didn't results SSL setup)
 
     """
-    def __init__(self, client_conn, httpversion, host, port, scheme, method, path, headers, content, timestamp_start=None, timestamp_end=None, tcp_setup_timestamp=None, ssl_setup_timestamp=None):
+    def __init__(
+            self, client_conn, httpversion, host, port,
+            scheme, method, path, headers, content, timestamp_start=None,
+            timestamp_end=None, tcp_setup_timestamp=None,
+            ssl_setup_timestamp=None, ip=None):
         assert isinstance(headers, ODictCaseless)
         self.client_conn = client_conn
         self.httpversion = httpversion
@@ -299,10 +292,20 @@ class Request(HTTPMsg):
         self.close = False
         self.tcp_setup_timestamp = tcp_setup_timestamp
         self.ssl_setup_timestamp = ssl_setup_timestamp
+        self.ip = ip
 
         # Have this request's cookies been modified by sticky cookies or auth?
         self.stickycookie = False
         self.stickyauth = False
+
+        # Live attributes - not serialized
+        self.wfile, self.rfile = None, None
+
+    def set_live(self, rfile, wfile):
+        self.wfile, self.rfile = wfile, rfile
+
+    def is_live(self):
+        return bool(self.wfile)
 
     def anticache(self):
         """
@@ -364,6 +367,7 @@ class Request(HTTPMsg):
         self.timestamp_end = state["timestamp_end"]
         self.tcp_setup_timestamp = state["tcp_setup_timestamp"]
         self.ssl_setup_timestamp = state["ssl_setup_timestamp"]
+        self.ip = state["ip"]
 
     def _get_state(self):
         return dict(
@@ -379,7 +383,8 @@ class Request(HTTPMsg):
             timestamp_start = self.timestamp_start,
             timestamp_end = self.timestamp_end,
             tcp_setup_timestamp = self.tcp_setup_timestamp,
-            ssl_setup_timestamp = self.ssl_setup_timestamp
+            ssl_setup_timestamp = self.ssl_setup_timestamp,
+            ip = self.ip
         )
 
     @classmethod
@@ -397,7 +402,8 @@ class Request(HTTPMsg):
             state["timestamp_start"],
             state["timestamp_end"],
             state["tcp_setup_timestamp"],
-            state["ssl_setup_timestamp"]
+            state["ssl_setup_timestamp"],
+            state["ip"]
         )
 
     def __hash__(self):
@@ -729,6 +735,8 @@ class Response(HTTPMsg):
         )
         if self.content:
             headers["Content-Length"] = [str(len(self.content))]
+        elif 'Transfer-Encoding' in self.headers:
+            headers["Content-Length"] = ["0"]
         proto = "HTTP/%s.%s %s %s"%(self.httpversion[0], self.httpversion[1], self.code, str(self.msg))
         data = (proto, str(headers))
         return FMT%data
@@ -1349,7 +1357,7 @@ class FlowMaster(controller.Master):
         self.server_playback = None
         self.client_playback = None
         self.kill_nonreplay = False
-        self.script = None
+        self.scripts = []
         self.pause_scripts = False
 
         self.stickycookie_state = False
@@ -1365,19 +1373,20 @@ class FlowMaster(controller.Master):
         self.setheaders = SetHeaders()
 
         self.stream = None
-        app.mapp.config["PMASTER"] = self
+        self.apps = AppRegistry()
 
-    def start_app(self, domain, ip):
-        self.server.apps.add(
-            app.mapp,
-            domain,
-            80
-        )
-        self.server.apps.add(
-            app.mapp,
-            ip,
-            80
-        )
+    def start_app(self, host, port, external):
+        if not external:
+            self.apps.add(
+                app.mapp,
+                host,
+                port
+            )
+        else:
+            threading.Thread(target=app.mapp.run,kwargs={
+                "use_reloader": False,
+                "host": host,
+                "port": port}).start()
 
     def add_event(self, e, level="info"):
         """
@@ -1385,36 +1394,32 @@ class FlowMaster(controller.Master):
         """
         pass
 
-    def get_script(self, path):
-        """
-            Returns an (error, script) tuple.
-        """
-        s = script.Script(path, ScriptContext(self))
-        try:
-            s.load()
-        except script.ScriptError, v:
-            return (v.args[0], None)
-        ret = s.run("start")
-        if not ret[0] and ret[1]:
-            return ("Error in script start:\n\n" + ret[1][1], None)
-        return (None, s)
+    def unload_scripts(self):
+        for s in self.scripts[:]:
+            s.unload()
+            self.scripts.remove(s)
 
-    def load_script(self, path):
+    def load_script(self, command):
         """
             Loads a script. Returns an error description if something went
-            wrong. If path is None, the current script is terminated.
+            wrong.
         """
-        if path is None:
-            self.run_script_hook("done")
-            self.script = None
-        else:
-            r = self.get_script(path)
-            if r[0]:
-                return r[0]
-            else:
-                if self.script:
-                    self.run_script_hook("done")
-                self.script = r[1]
+        try:
+            s = script.Script(command, self)
+        except script.ScriptError, v:
+            return v.args[0]
+        self.scripts.append(s)
+
+    def run_single_script_hook(self, script, name, *args, **kwargs):
+        if script and not self.pause_scripts:
+            ret = script.run(name, *args, **kwargs)
+            if not ret[0] and ret[1]:
+                e = "Script error:\n" + ret[1][1]
+                self.add_event(e, "error")
+
+    def run_script_hook(self, name, *args, **kwargs):
+        for script in self.scripts:
+            self.run_single_script_hook(script, name, *args, **kwargs)
 
     def set_stickycookie(self, txt):
         if txt:
@@ -1565,13 +1570,6 @@ class FlowMaster(controller.Master):
             if block:
                 rt.join()
 
-    def run_script_hook(self, name, *args, **kwargs):
-        if self.script and not self.pause_scripts:
-            ret = self.script.run(name, *args, **kwargs)
-            if not ret[0] and ret[1]:
-                e = "Script error:\n" + ret[1][1]
-                self.add_event(e, "error")
-
     def handle_clientconnect(self, cc):
         self.run_script_hook("clientconnect", cc)
         cc.reply()
@@ -1579,6 +1577,15 @@ class FlowMaster(controller.Master):
     def handle_clientdisconnect(self, r):
         self.run_script_hook("clientdisconnect", r)
         r.reply()
+
+    def handle_serverconnection(self, sc):
+        # To unify the mitmproxy script API, we call the script hook
+        # "serverconnect" rather than "serverconnection".  As things are handled
+        # differently in libmproxy (ClientConnect + ClientDisconnect vs
+        # ServerConnection class), there is no "serverdisonnect" event at the
+        # moment.
+        self.run_script_hook("serverconnect", sc)
+        sc.reply()
 
     def handle_error(self, r):
         f = self.state.add_error(r)
@@ -1590,6 +1597,14 @@ class FlowMaster(controller.Master):
         return f
 
     def handle_request(self, r):
+        if r.is_live():
+            app = self.apps.get(r)
+            if app:
+                err = app.serve(r, r.wfile, **{"mitmproxy.master": self})
+                if err:
+                    self.add_event("Error in wsgi app. %s"%err, "error")
+                r.reply(proxy.KILL)
+                return
         f = self.state.add_request(r)
         self.replacehooks.run(f)
         self.setheaders.run(f)
@@ -1613,8 +1628,7 @@ class FlowMaster(controller.Master):
         return f
 
     def shutdown(self):
-        if self.script:
-            self.load_script(None)
+        self.unload_scripts()
         controller.Master.shutdown(self)
         if self.stream:
             for i in self.state._flow_list:

@@ -1,16 +1,29 @@
 import os, shutil, tempfile
 from contextlib import contextmanager
 from libmproxy import flow, utils, controller
+if os.name != "nt":
+    from libmproxy.console.flowview import FlowView
+    from libmproxy.console import ConsoleState
 from netlib import certutils
-import mock
+from nose.plugins.skip import SkipTest
+from mock import Mock
 
-def treq(conn=None):
+def _SkipWindows():
+    raise SkipTest("Skipped on Windows.")
+def SkipWindows(fn):
+    if os.name == "nt":
+        return _SkipWindows
+    else:
+        return fn
+
+def treq(conn=None, content="content"):
     if not conn:
         conn = flow.ClientConnect(("address", 22))
     conn.reply = controller.DummyReply()
     headers = flow.ODictCaseless()
     headers["header"] = ["qvalue"]
-    r = flow.Request(conn, (1, 1), "host", 80, "http", "GET", "/path", headers, "content")
+    r = flow.Request(conn, (1, 1), "host", 80, "http", "GET", "/path", headers,
+            content)
     r.reply = controller.DummyReply()
     return r
 
@@ -25,27 +38,45 @@ def tresp(req=None):
     resp.reply = controller.DummyReply()
     return resp
 
+def terr(req=None):
+    if not req:
+        req = treq()
+    err = flow.Error(req, "error")
+    err.reply = controller.DummyReply()
+    return err
 
-def tflow():
-    r = treq()
+
+def tflow(r=None):
+    if r == None:
+        r = treq()
     return flow.Flow(r)
 
 
 def tflow_full():
-    r = treq()
-    f = flow.Flow(r)
-    f.response = tresp(r)
+    f = tflow()
+    f.response = tresp(f.request)
     return f
 
 
 def tflow_err():
-    r = treq()
-    f = flow.Flow(r)
-    f.error = flow.Error(r, "error")
-    f.error.reply = controller.DummyReply()
+    f = tflow()
+    f.error = terr(f.request)
     return f
 
+def tflowview(request_contents=None):
+    m = Mock()
+    cs = ConsoleState()
+    if request_contents == None:
+        flow = tflow()
+    else:
+        req = treq(None, request_contents)
+        flow = tflow(req)
 
+    fv = FlowView(m, cs, flow)
+    return fv
+
+def get_body_line(last_displayed_body, line_nb):
+    return last_displayed_body.contents()[line_nb + 2]
 
 @contextmanager
 def tmpdir(*args, **kwargs):

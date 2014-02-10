@@ -143,7 +143,18 @@ class TestHTTP(tservers.HTTPProxTest, CommonMixin, AppMixin):
         req = p.request("get:'http://foo':h':foo'='bar'")
         assert req.status_code == 400
 
-
+    def test_empty_chunked_content(self):
+        """
+        https://github.com/mitmproxy/mitmproxy/issues/186
+        """
+        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        connection.connect(("127.0.0.1", self.proxy.port))
+        spec = '301:h"Transfer-Encoding"="chunked":r:b"0\\r\\n\\r\\n"'
+        connection.send("GET http://localhost:%d/p/%s HTTP/1.1\r\n"%(self.server.port, spec))
+        connection.send("\r\n");
+        resp = connection.recv(50000)
+        connection.close()
+        assert "content-length" in resp.lower()
 
 class TestHTTPAuth(tservers.HTTPProxTest):
     authenticator = http_auth.BasicProxyAuth(http_auth.PassManSingleUser("test", "test"), "realm")
@@ -165,10 +176,10 @@ class TestHTTPAuth(tservers.HTTPProxTest):
 class TestHTTPConnectSSLError(tservers.HTTPProxTest):
     certfile = True
     def test_go(self):
-        p = self.pathoc()
-        req = "connect:'localhost:%s'"%self.proxy.port
-        assert p.request(req).status_code == 200
-        assert p.request(req).status_code == 400
+        p = self.pathoc_raw()
+        dst = ("localhost", self.proxy.port)
+        p.connect(connect_to=dst)
+        tutils.raises("400 - Bad Request", p.http_connect, dst)
 
 
 class TestHTTPS(tservers.HTTPProxTest, CommonMixin):
@@ -191,22 +202,19 @@ class TestHTTPS(tservers.HTTPProxTest, CommonMixin):
         assert p.request("get:/:i0,'invalid\r\n\r\n'").status_code == 400
 
 
-class TestHTTPSNoUpstream(tservers.HTTPProxTest, CommonMixin):
-    ssl = True
-    no_upstream_cert = True
-    def test_cert_gen_error(self):
-        f = self.pathoc_raw()
-        f.connect((u"foo..bar".encode("utf8"), 0))
-        f.request("get:/")
-        assert "dummy cert" in "".join(self.proxy.log)
-
-
 class TestHTTPSCertfile(tservers.HTTPProxTest, CommonMixin):
     ssl = True
     certfile = True
     def test_certfile(self):
         assert self.pathod("304")
 
+class TestHTTPSNoCommonName(tservers.HTTPProxTest, CommonMixin):
+    """
+    Test what happens if we get a cert without common name back.
+    """
+    ssl = True
+    ssloptions=pathod.SSLOptions(certfile=tutils.test_data.path("data/no_common_name.pem"),
+                                 keyfile=tutils.test_data.path("data/no_common_name.pem"))
 
 class TestReverse(tservers.ReverseProxTest, CommonMixin):
     reverse = True
@@ -256,13 +264,14 @@ class TestProxy(tservers.HTTPProxTest):
 
         # call pathod server, wait a second to complete the request
         connection.send("GET http://localhost:%d/p/304:b@1k HTTP/1.1\r\n"%self.server.port)
+        time.sleep(1)
         connection.send("\r\n");
         connection.recv(50000)
         connection.close()
 
         request, response = self.master.state.view[0].request, self.master.state.view[0].response
         assert response.code == 304  # sanity test for our low level request
-        assert request.timestamp_end - request.timestamp_start > 0
+        assert 0.95 < (request.timestamp_end - request.timestamp_start) < 1.2 #time.sleep might be a little bit shorter than a second
 
     def test_request_timestamps_not_affected_by_client_time(self):
         # test that don't include user wait time in request's timestamps
@@ -298,6 +307,11 @@ class TestProxy(tservers.HTTPProxTest):
         assert second_request.tcp_setup_timestamp == None
         assert second_request.ssl_setup_timestamp == None
 
+    def test_request_ip(self):
+        f = self.pathod("200:b@100")
+        assert f.status_code == 200
+        request = self.master.state.view[0].request
+        assert request.ip == "127.0.0.1"
 
 class TestProxySSL(tservers.HTTPProxTest):
     ssl=True

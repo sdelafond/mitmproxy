@@ -1,8 +1,7 @@
 """
     This is a script stub, with definitions for all events.
 """
-
-def start(ctx):
+def start(ctx, argv):
     """
         Called once on script startup, before any other events.
     """
@@ -14,6 +13,13 @@ def clientconnect(ctx, client_connect):
         connection can correspond to multiple HTTP requests
     """
     ctx.log("clientconnect")
+
+def serverconnect(ctx, server_connection):
+    """
+        Called when the proxy initiates a connection to the target server. Note that a
+        connection can correspond to multiple HTTP requests
+    """
+    ctx.log("serverconnect")
 
 def request(ctx, flow):
     """
