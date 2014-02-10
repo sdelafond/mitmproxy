@@ -1,3 +1,9 @@
+mitmproxy (0.10-1) unstable; urgency=low
+
+  * New upstream relase
+
+ -- Sebastien Delafond <seb@debian.org>  Mon, 10 Feb 2014 14:07:27 +0100
+
 mitmproxy (0.9.2-2) unstable; urgency=low
 
   * Change architecture to "all"
