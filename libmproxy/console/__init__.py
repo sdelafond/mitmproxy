@@ -1,8 +1,9 @@
+from __future__ import absolute_import
 import mailcap, mimetypes, tempfile, os, subprocess, glob, time, shlex, stat
-import os.path, sys, weakref
+import os.path, sys, weakref, traceback
 import urwid
-from .. import controller, utils, flow, script
-import flowlist, flowview, help, common, grideditor, palettes, contentview, flowdetailview
+from .. import controller, utils, flow, script, proxy
+from . import flowlist, flowview, help, common, grideditor, palettes, contentview, flowdetailview
 
 EVENTLOG_SIZE = 500
 
@@ -77,7 +78,6 @@ class PathEdit(urwid.Edit, _PathCompleter):
 class ActionBar(common.WWrap):
     def __init__(self):
         self.message("")
-        self.expire = None
 
     def selectable(self):
         return True
@@ -129,6 +129,14 @@ class StatusBar(common.WWrap):
                 r.append(":%s in file]"%self.master.server_playback.count())
             else:
                 r.append(":%s to go]"%self.master.server_playback.count())
+        if self.master.get_ignore_filter():
+            r.append("[")
+            r.append(("heading_key", "I"))
+            r.append("gnore:%d]" % len(self.master.get_ignore_filter()))
+        if self.master.get_tcp_filter():
+            r.append("[")
+            r.append(("heading_key", "T"))
+            r.append("CP:%d]" % len(self.master.get_tcp_filter()))
         if self.master.state.intercept_txt:
             r.append("[")
             r.append(("heading_key", "i"))
@@ -145,10 +153,6 @@ class StatusBar(common.WWrap):
             r.append("[")
             r.append(("heading_key", "u"))
             r.append(":%s]"%self.master.stickyauth_txt)
-        if self.master.server.config.reverse_proxy:
-            r.append("[")
-            r.append(("heading_key", "P"))
-            r.append(":%s]"%utils.unparse_url(*self.master.server.config.reverse_proxy))
         if self.master.state.default_body_view.name != "Auto":
             r.append("[")
             r.append(("heading_key", "M"))
@@ -169,14 +173,23 @@ class StatusBar(common.WWrap):
             opts.append("no-upstream-cert")
         if self.master.state.follow_focus:
             opts.append("following")
+        if self.master.stream_large_bodies:
+            opts.append("stream:%s" % utils.pretty_size(self.master.stream_large_bodies.max_size))
 
         if opts:
             r.append("[%s]"%(":".join(opts)))
 
+        if self.master.server.config.mode in ["reverse", "upstream"]:
+            dst = self.master.server.config.mode.dst
+            scheme = "https" if dst[0] else "http"
+            if dst[1] != dst[0]:
+                scheme += "2https" if dst[1] else "http"
+            r.append("[dest:%s]"%utils.unparse_url(scheme, *dst[2:]))
         if self.master.scripts:
-            r.append("[scripts:%s]"%len(self.master.scripts))
-        if self.master.debug:
-            r.append("[lt:%0.3f]"%self.master.looptime)
+            r.append("[")
+            r.append(("heading_key", "s"))
+            r.append("cripts:%s]"%len(self.master.scripts))
+        # r.append("[lt:%0.3f]"%self.master.looptime)
 
         if self.master.stream:
             r.append("[W:%s]"%self.master.stream_path)
@@ -197,7 +210,10 @@ class StatusBar(common.WWrap):
         ]
 
         if self.master.server.bound:
-            boundaddr = "[%s:%s]"%(self.master.server.address or "*", self.master.server.port)
+            host = self.master.server.address.host
+            if host == "0.0.0.0":
+                host = "*"
+            boundaddr = "[%s:%s]"%(host, self.master.server.address.port)
         else:
             boundaddr = ""
         t.extend(self.get_status())
@@ -261,16 +277,16 @@ class ConsoleState(flow.State):
         d = self.flowsettings.get(flow, {})
         return d.get(key, default)
 
-    def add_request(self, req):
-        f = flow.State.add_request(self, req)
+    def add_flow(self, f):
+        super(ConsoleState, self).add_flow(f)
         if self.focus is None:
             self.set_focus(0)
         elif self.follow_focus:
             self.set_focus(len(self.view) - 1)
         return f
 
-    def add_response(self, resp):
-        f = flow.State.add_response(self, resp)
+    def update_flow(self, f):
+        super(ConsoleState, self).update_flow(f)
         if self.focus is None:
             self.set_focus(0)
         return f
@@ -316,6 +332,10 @@ class ConsoleState(flow.State):
         self.set_focus(self.focus)
         return ret
 
+    def clear(self):
+        self.focus = None
+        super(ConsoleState, self).clear()
+
 
 
 class Options(object):
@@ -326,7 +346,6 @@ class Options(object):
         "anticache",
         "anticomp",
         "client_replay",
-        "debug",
         "eventlog",
         "keepserving",
         "kill",
@@ -342,6 +361,7 @@ class Options(object):
         "server_replay",
         "stickycookie",
         "stickyauth",
+        "stream_large_bodies",
         "verbosity",
         "wfile",
         "nopop",
@@ -390,6 +410,8 @@ class ConsoleMaster(flow.FlowMaster):
             print >> sys.stderr, "Sticky auth error:", r
             sys.exit(1)
 
+        self.set_stream_large_bodies(options.stream_large_bodies)
+
         self.refresh_server_playback = options.refresh_server_playback
         self.anticache = options.anticache
         self.anticomp = options.anticomp
@@ -407,8 +429,6 @@ class ConsoleMaster(flow.FlowMaster):
         if options.server_replay:
             self.server_playback_path(options.server_replay)
 
-        self.debug = options.debug
-
         if options.scripts:
             for i in options.scripts:
                 err = self.load_script(i)
@@ -416,20 +436,20 @@ class ConsoleMaster(flow.FlowMaster):
                     print >> sys.stderr, "Script load error:", err
                     sys.exit(1)
 
-        if options.wfile:
-            err = self.start_stream(options.wfile)
+        if options.outfile:
+            err = self.start_stream_to_path(options.outfile[0], options.outfile[1])
             if err:
-                print >> sys.stderr, "Script load error:", err
+                print >> sys.stderr, "Stream file error:", err
                 sys.exit(1)
 
         if options.app:
-            self.start_app(self.options.app_host, self.options.app_port, self.options.app_external)
+            self.start_app(self.options.app_host, self.options.app_port)
 
-    def start_stream(self, path):
+    def start_stream_to_path(self, path, mode="wb"):
         path = os.path.expanduser(path)
         try:
-            f = file(path, "wb")
-            flow.FlowMaster.start_stream(self, f, None)
+            f = file(path, mode)
+            self.start_stream(f, None)
         except IOError, v:
             return str(v)
         self.stream_path = path
@@ -438,20 +458,20 @@ class ConsoleMaster(flow.FlowMaster):
         status, val = s.run(method, f)
         if val:
             if status:
-                self.add_event("Method %s return: %s"%(method, val))
+                self.add_event("Method %s return: %s"%(method, val), "debug")
             else:
-                self.add_event("Method %s error: %s"%(method, val[1]))
+                self.add_event("Method %s error: %s"%(method, val[1]), "error")
 
     def run_script_once(self, command, f):
         if not command:
             return
-        self.add_event("Running script on flow: %s"%command)
+        self.add_event("Running script on flow: %s"%command, "debug")
 
         try:
             s = script.Script(command, self)
         except script.ScriptError, v:
             self.statusbar.message("Error loading script.")
-            self.add_event("Error loading script:\n%s"%v.args[0])
+            self.add_event("Error loading script:\n%s"%v.args[0], "error")
             return
 
         if f.request:
@@ -500,7 +520,8 @@ class ConsoleMaster(flow.FlowMaster):
             self.start_server_playback(
                 ret,
                 self.killextra, self.rheaders,
-                False, self.nopop
+                False, self.nopop,
+                self.options.replay_ignore_params, self.options.replay_ignore_content
             )
 
     def spawn_editor(self, data):
@@ -568,31 +589,35 @@ class ConsoleMaster(flow.FlowMaster):
         self.ui.set_terminal_properties(256)
         self.ui.register_palette(self.palette)
         self.flow_list_walker = flowlist.FlowListWalker(self, self.state)
-
         self.view = None
         self.statusbar = None
         self.header = None
         self.body = None
         self.help_context = None
-
         self.prompting = False
         self.onekey = False
 
         self.view_flowlist()
 
-        self.server.start_slave(controller.Slave, controller.Channel(self.masterq))
+        self.server.start_slave(controller.Slave, controller.Channel(self.masterq, self.should_exit))
 
         if self.options.rfile:
             ret = self.load_flows(self.options.rfile)
             if ret and self.state.flow_count():
-                self.add_event("File truncated or corrupted. Loaded as many flows as possible.")
+                self.add_event("File truncated or corrupted. Loaded as many flows as possible.","error")
             elif not self.state.flow_count():
                 self.shutdown()
                 print >> sys.stderr, "Could not load file:", ret
                 sys.exit(1)
 
-        self.ui.run_wrapper(self.loop)
-        # If True, quit just pops out to flow list view.
+        try:
+            self.ui.run_wrapper(self.loop)
+        except Exception:
+            self.ui.stop()
+            sys.stdout.flush()
+            print >> sys.stderr, traceback.format_exc()
+            print >> sys.stderr, "mitmproxy has crashed!"
+            print >> sys.stderr, "Please lodge a bug report at: https://github.com/mitmproxy/mitmproxy"
         print >> sys.stderr, "Shutting down..."
         sys.stderr.flush()
         self.shutdown()
@@ -649,7 +674,6 @@ class ConsoleMaster(flow.FlowMaster):
         self.statusbar = StatusBar(self, flowview.footer)
         self.state.set_focus_flow(flow)
         self.state.view_mode = common.VIEW_FLOW
-
         self.make_view()
         self.help_context = flowview.help_context
 
@@ -747,7 +771,7 @@ class ConsoleMaster(flow.FlowMaster):
         self.prompt_done()
 
     def accept_all(self):
-        self.state.accept_all()
+        self.state.accept_all(self)
 
     def set_limit(self, txt):
         v = self.state.set_limit(txt)
@@ -762,15 +786,6 @@ class ConsoleMaster(flow.FlowMaster):
         self.state.default_body_view = v
         self.refresh_focus()
 
-    def set_reverse_proxy(self, txt):
-        if not txt:
-            self.server.config.reverse_proxy = None
-        else:
-            s = utils.parse_proxy_spec(txt)
-            if not s:
-                return "Invalid reverse proxy specification"
-            self.server.config.reverse_proxy = s
-
     def drawscreen(self):
         size = self.ui.get_cols_rows()
         canvas = self.view.render(size, focus=1)
@@ -783,19 +798,33 @@ class ConsoleMaster(flow.FlowMaster):
         else:
             self.view_flowlist()
 
-    def edit_scripts(self, *args, **kwargs):
-        pass
+    def edit_scripts(self, scripts):
+        commands = [x[0] for x in scripts]  # remove outer array
+        if commands == [s.command for s in self.scripts]:
+            return
+
+        self.unload_scripts()
+        for command in commands:
+            self.load_script(command)
+
+    def edit_ignore_filter(self, ignore):
+        patterns = (x[0] for x in ignore)
+        self.set_ignore_filter(patterns)
+
+    def edit_tcp_filter(self, tcp):
+        patterns = (x[0] for x in tcp)
+        self.set_tcp_filter(patterns)
 
     def loop(self):
         changed = True
         try:
-            while not controller.should_exit:
+            while not self.should_exit.is_set():
                 startloop = time.time()
                 if changed:
                     self.statusbar.redraw()
                     size = self.drawscreen()
-                changed = self.tick(self.masterq)
-                self.ui.set_input_timeouts(max_wait=0.1)
+                changed = self.tick(self.masterq, 0.01)
+                self.ui.set_input_timeouts(max_wait=0.01)
                 keys = self.ui.get_input()
                 if keys:
                     changed = True
@@ -842,6 +871,22 @@ class ConsoleMaster(flow.FlowMaster):
                                         self.setheaders.set
                                     )
                                 )
+                            elif k == "I":
+                                self.view_grideditor(
+                                    grideditor.HostPatternEditor(
+                                        self,
+                                        [[x] for x in self.get_ignore_filter()],
+                                        self.edit_ignore_filter
+                                    )
+                                )
+                            elif k == "T":
+                                self.view_grideditor(
+                                    grideditor.HostPatternEditor(
+                                        self,
+                                        [[x] for x in self.get_tcp_filter()],
+                                        self.edit_tcp_filter
+                                    )
+                                )
                             elif k == "i":
                                 self.prompt(
                                     "Intercept filter: ",
@@ -865,16 +910,6 @@ class ConsoleMaster(flow.FlowMaster):
                                     contentview.view_prompts,
                                     self.change_default_display_mode
                                 )
-                            elif k == "P":
-                                if self.server.config.reverse_proxy:
-                                    p = utils.unparse_url(*self.server.config.reverse_proxy)
-                                else:
-                                    p = ""
-                                self.prompt(
-                                    "Reverse proxy: ",
-                                    p,
-                                    self.set_reverse_proxy
-                                )
                             elif k == "R":
                                 self.view_grideditor(
                                     grideditor.ReplaceEditor(
@@ -887,7 +922,7 @@ class ConsoleMaster(flow.FlowMaster):
                                 self.view_grideditor(
                                     grideditor.ScriptEditor(
                                         self,
-                                        [[i.argv[0]] for i in self.scripts],
+                                        [[i.command] for i in self.scripts],
                                         self.edit_scripts
                                     )
                                 )
@@ -1007,11 +1042,11 @@ class ConsoleMaster(flow.FlowMaster):
         if hasattr(self.statusbar, "refresh_flow"):
             self.statusbar.refresh_flow(c)
 
-    def process_flow(self, f, r):
-        if self.state.intercept and f.match(self.state.intercept) and not f.request.is_replay():
-            f.intercept()
+    def process_flow(self, f):
+        if self.state.intercept and f.match(self.state.intercept) and not f.request.is_replay:
+            f.intercept(self)
         else:
-            r.reply()
+            f.reply()
         self.sync_list_view()
         self.refresh_flow(f)
 
@@ -1019,35 +1054,34 @@ class ConsoleMaster(flow.FlowMaster):
         self.eventlist[:] = []
 
     def add_event(self, e, level="info"):
-        if level == "info":
-            e = urwid.Text(str(e))
-        elif level == "error":
-            e = urwid.Text(("error", str(e)))
+        needed = dict(error=0, info=1, debug=2).get(level, 1)
+        if self.options.verbosity < needed:
+            return
 
+        if level == "error":
+            e = urwid.Text(("error", str(e)))
+        else:
+            e = urwid.Text(str(e))
         self.eventlist.append(e)
         if len(self.eventlist) > EVENTLOG_SIZE:
             self.eventlist.pop(0)
         self.eventlist.set_focus(len(self.eventlist)-1)
 
     # Handlers
-    def handle_log(self, l):
-        self.add_event(l.msg)
-        l.reply()
-
-    def handle_error(self, r):
-        f = flow.FlowMaster.handle_error(self, r)
+    def handle_error(self, f):
+        f = flow.FlowMaster.handle_error(self, f)
         if f:
-            self.process_flow(f, r)
+            self.process_flow(f)
         return f
 
-    def handle_request(self, r):
-        f = flow.FlowMaster.handle_request(self, r)
+    def handle_request(self, f):
+        f = flow.FlowMaster.handle_request(self, f)
         if f:
-            self.process_flow(f, r)
+            self.process_flow(f)
         return f
 
-    def handle_response(self, r):
-        f = flow.FlowMaster.handle_response(self, r)
+    def handle_response(self, f):
+        f = flow.FlowMaster.handle_response(self, f)
         if f:
-            self.process_flow(f, r)
+            self.process_flow(f)
         return f

@@ -1,0 +1,28 @@
+{
+  "name": "mitmproxy",
+  "private": true,
+  "devDependencies": {
+    "bower": "",
+    "bower-installer": "",
+    "clean-css": "",
+    "gulp": "",
+    "gulp-concat": "",
+    "gulp-jshint": "",
+    "gulp-less": "",
+    "gulp-livereload": "",
+    "gulp-minify-css": "",
+    "gulp-notify": "",
+    "gulp-peg": "",
+    "gulp-plumber": "",
+    "gulp-qunit": "",
+    "gulp-react": "",
+    "gulp-rename": "",
+    "gulp-sourcemaps": "",
+    "gulp-uglify": "",
+    "gulp-util": "",
+    "jshint-stylish": "",
+    "merge-stream": "",
+    "react": "",
+    "react-tools": ""
+  }
+}

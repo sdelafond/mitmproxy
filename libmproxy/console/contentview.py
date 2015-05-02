@@ -1,16 +1,14 @@
-import logging
-import re, cStringIO, traceback, json
-import urwid
-
+from __future__ import absolute_import
+import logging, subprocess, re, cStringIO, traceback, json, urwid
 from PIL import Image
 from PIL.ExifTags import TAGS
 
 import lxml.html, lxml.etree
 import netlib.utils
-import common
+from . import common
 from .. import utils, encoding, flow
 from ..contrib import jsbeautifier, html2text
-import subprocess
+from ..contrib.wbxml.ASCommandResponse import ASCommandResponse
 try:
     import pyamf
     from pyamf import remoting, flex
@@ -429,12 +427,31 @@ class ViewProtobuf:
         txt = _view_text(decoded[:limit], len(decoded), limit)
         return "Protobuf", txt
 
+class ViewWBXML:
+    name = "WBXML"
+    prompt = ("wbxml", "w")
+    content_types = [
+        "application/vnd.wap.wbxml",
+        "application/vnd.ms-sync.wbxml"
+    ]
+
+    def __call__(self, hdrs, content, limit):
+        
+        try:
+            parser = ASCommandResponse(content)
+            parsedContent = parser.xmlString
+            txt = _view_text(parsedContent, len(parsedContent), limit)
+            return "WBXML", txt
+        except:
+        	return None
+
 views = [
     ViewAuto(),
     ViewRaw(),
     ViewHex(),
     ViewJSON(),
     ViewXML(),
+    ViewWBXML(),
     ViewHTML(),
     ViewHTMLOutline(),
     ViewJavaScript(),
@@ -493,7 +510,7 @@ def get_content_view(viewmode, hdrItems, content, limit, logfunc):
     except Exception:
         s = traceback.format_exc()
         s = "Content viewer failed: \n"  + s
-        logfunc(s)
+        logfunc(s, "error")
         ret = None
     if not ret:
         ret = get("Raw")(hdrs, content, limit)

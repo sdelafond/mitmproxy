@@ -1,6 +1,8 @@
+from __future__ import absolute_import
 import urwid
 import urwid.util
-from .. import utils, flow
+from .. import utils
+from ..protocol.http import CONTENT_MISSING
 
 
 VIEW_LIST = 0
@@ -106,7 +108,7 @@ def raw_format_flow(f, focus, extended, padding):
 
     preamble = sum(i[1] for i in req) + len(req) -1
 
-    if f["intercepting"] and not f["req_acked"]:
+    if f["intercepted"] and not f["acked"]:
         uc = "intercept"
     elif f["resp_code"] or f["err_msg"]:
         uc = "text"
@@ -136,7 +138,7 @@ def raw_format_flow(f, focus, extended, padding):
         if f["resp_is_replay"]:
             resp.append(fcol(SYMBOL_REPLAY, "replay"))
         resp.append(fcol(f["resp_code"], ccol))
-        if f["intercepting"] and f["resp_code"] and not f["resp_acked"]:
+        if f["intercepted"] and f["resp_code"] and not f["acked"]:
             rc = "intercept"
         else:
             rc = "text"
@@ -169,13 +171,13 @@ flowcache = FlowCache()
 
 def format_flow(f, focus, extended=False, hostheader=False, padding=2):
     d = dict(
-        intercepting = f.intercepting,
+        intercepted = f.intercepted,
+        acked = f.reply.acked,
 
         req_timestamp = f.request.timestamp_start,
-        req_is_replay = f.request.is_replay(),
+        req_is_replay = f.request.is_replay,
         req_method = f.request.method,
-        req_acked = f.request.reply.acked,
-        req_url = f.request.get_url(hostheader=hostheader),
+        req_url = f.request.pretty_url(hostheader=hostheader),
 
         err_msg = f.error.msg if f.error else None,
         resp_code = f.response.code if f.response else None,
@@ -183,19 +185,21 @@ def format_flow(f, focus, extended=False, hostheader=False, padding=2):
     if f.response:
         if f.response.content:
             contentdesc = utils.pretty_size(len(f.response.content))
-        elif f.response.content == flow.CONTENT_MISSING:
+        elif f.response.content == CONTENT_MISSING:
             contentdesc = "[content missing]"
         else:
             contentdesc = "[no content]"
 
-        delta = f.response.timestamp_end - f.response.timestamp_start
-        size = len(f.response.content) + f.response.get_header_size()
+        if f.response.timestamp_end:
+            delta = f.response.timestamp_end - f.response.timestamp_start
+        else:
+            delta = 0
+        size = f.response.size()
         rate = utils.pretty_size(size / ( delta if delta > 0 else 1 ) )
 
         d.update(dict(
             resp_code = f.response.code,
-            resp_is_replay = f.response.is_replay(),
-            resp_acked = f.response.reply.acked,
+            resp_is_replay = f.response.is_replay,
             resp_clen = contentdesc,
             resp_rate = "{0}/s".format(rate),
         ))

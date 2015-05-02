@@ -1,7 +1,5 @@
+from __future__ import absolute_import
 import Queue, threading
-
-should_exit = False
-
 
 class DummyReply:
     """
@@ -36,8 +34,9 @@ class Reply:
 
 
 class Channel:
-    def __init__(self, q):
+    def __init__(self, q, should_exit):
         self.q = q
+        self.should_exit = should_exit
 
     def ask(self, mtype, m):
         """
@@ -46,11 +45,11 @@ class Channel:
         """
         m.reply = Reply(m)
         self.q.put((mtype, m))
-        while not should_exit:
+        while not self.should_exit.is_set():
             try:
                 # The timeout is here so we can handle a should_exit event.
                 g = m.reply.q.get(timeout=0.5)
-            except Queue.Empty: # pragma: nocover
+            except Queue.Empty:  # pragma: nocover
                 continue
             return g
 
@@ -72,12 +71,13 @@ class Slave(threading.Thread):
         self.channel, self.server = channel, server
         self.server.set_channel(channel)
         threading.Thread.__init__(self)
+        self.name = "SlaveThread (%s:%s)" % (self.server.address.host, self.server.address.port)
 
     def run(self):
         self.server.serve_forever()
 
 
-class Master:
+class Master(object):
     """
         Masters get and respond to messages from slaves.
     """
@@ -87,8 +87,9 @@ class Master:
         """
         self.server = server
         self.masterq = Queue.Queue()
+        self.should_exit = threading.Event()
 
-    def tick(self, q):
+    def tick(self, q, timeout):
         changed = False
         try:
             # This endless loop runs until the 'Queue.Empty'
@@ -96,8 +97,7 @@ class Master:
             # the queue, this speeds up every request by 0.1 seconds,
             # because get_input(..) function is not blocking.
             while True:
-                # Small timeout to prevent pegging the CPU
-                msg = q.get(timeout=0.01)
+                msg = q.get(timeout=timeout)
                 self.handle(*msg)
                 changed = True
         except Queue.Empty:
@@ -105,11 +105,10 @@ class Master:
         return changed
 
     def run(self):
-        global should_exit
-        should_exit = False
-        self.server.start_slave(Slave, Channel(self.masterq))
-        while not should_exit:
-            self.tick(self.masterq)
+        self.should_exit.clear()
+        self.server.start_slave(Slave, Channel(self.masterq, self.should_exit))
+        while not self.should_exit.is_set():
+            self.tick(self.masterq, 0.01)
         self.shutdown()
 
     def handle(self, mtype, obj):
@@ -121,8 +120,7 @@ class Master:
             obj.reply()
 
     def shutdown(self):
-        global should_exit
-        if not should_exit:
-            should_exit = True
+        if not self.should_exit.is_set():
+            self.should_exit.set()
             if self.server:
                 self.server.shutdown()

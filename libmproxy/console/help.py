@@ -1,5 +1,6 @@
+from __future__ import absolute_import
 import urwid
-import common
+from . import common
 from .. import filt, version
 
 footer = [
@@ -23,7 +24,7 @@ class HelpView(urwid.ListBox):
 
         text.append(urwid.Text([("head", "\n\nMovement:\n")]))
         keys = [
-            ("j, k", "up, down"),
+            ("j, k", "down, up"),
             ("h, l", "left, right (in some contexts)"),
             ("space", "page down"),
             ("pg up/down", "page up/down"),
@@ -35,6 +36,7 @@ class HelpView(urwid.ListBox):
         keys = [
             ("c", "client replay"),
             ("H", "edit global header set patterns"),
+            ("I", "set ignore pattern"),
             ("i", "set interception pattern"),
             ("M", "change global default display mode"),
                 (None,
@@ -78,6 +80,10 @@ class HelpView(urwid.ListBox):
                     [("text", ": XML")]
                 ),
                 (None,
+                    common.highlight_key("wbxml", "w") +
+                    [("text", ": WBXML")]
+                ),
+                (None,
                     common.highlight_key("amf", "f") +
                     [("text", ": AMF (requires PyAMF)")]
                 ),
@@ -109,11 +115,11 @@ class HelpView(urwid.ListBox):
 
             ("q", "quit / return to flow list"),
             ("Q", "quit without confirm prompt"),
-            ("P", "set reverse proxy mode"),
             ("R", "edit replacement patterns"),
-            ("s", "set/unset script"),
+            ("s", "add/remove scripts"),
             ("S", "server replay"),
             ("t", "set sticky cookie expression"),
+            ("T", "set tcp proxying pattern"),
             ("u", "set sticky auth expression"),
         ]
         text.extend(common.format_keyvals(keys, key="key", val="text", indent=4))

@@ -1,20 +1,25 @@
-import sys, os
+from __future__ import absolute_import
+import sys
+import os
 import netlib.utils
-import flow, filt, utils
+from . import flow, filt, utils
+from .protocol import http
 
-class DumpError(Exception): pass
+
+class DumpError(Exception):
+    pass
 
 
 class Options(object):
     attributes = [
         "app",
-        "app_external",
         "app_host",
         "app_port",
         "anticache",
         "anticomp",
         "client_replay",
-        "eventlog",
+        "filtstr",
+        "flow_detail",
         "keepserving",
         "kill",
         "no_server",
@@ -29,9 +34,14 @@ class Options(object):
         "showhost",
         "stickycookie",
         "stickyauth",
+        "stream_large_bodies",
         "verbosity",
-        "wfile",
+        "outfile",
+        "replay_ignore_content",
+        "replay_ignore_params",
+        "replay_ignore_payload_params",
     ]
+
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
@@ -42,35 +52,39 @@ class Options(object):
 
 def str_response(resp):
     r = "%s %s"%(resp.code, resp.msg)
-    if resp.is_replay():
+    if resp.is_replay:
         r = "[replay] " + r
     return r
 
 
-def str_request(req, showhost):
-    if req.client_conn:
-        c = req.client_conn.address[0]
+def str_request(f, showhost):
+    if f.client_conn:
+        c = f.client_conn.address.host
     else:
         c = "[replay]"
-    r = "%s %s %s"%(c, req.method, req.get_url(showhost))
-    if req.stickycookie:
+    r = "%s %s %s"%(c, f.request.method, f.request.pretty_url(showhost))
+    if f.request.stickycookie:
         r = "[stickycookie] " + r
     return r
 
 
 class DumpMaster(flow.FlowMaster):
-    def __init__(self, server, options, filtstr, outfile=sys.stdout):
+    def __init__(self, server, options, outfile=sys.stdout):
         flow.FlowMaster.__init__(self, server, flow.State())
         self.outfile = outfile
         self.o = options
         self.anticache = options.anticache
         self.anticomp = options.anticomp
-        self.eventlog = options.eventlog
         self.showhost = options.showhost
+        self.replay_ignore_params = options.replay_ignore_params
+        self.replay_ignore_content = options.replay_ignore_content
         self.refresh_server_playback = options.refresh_server_playback
+        self.replay_ignore_payload_params = options.replay_ignore_payload_params
 
-        if filtstr:
-            self.filt = filt.parse(filtstr)
+        self.set_stream_large_bodies(options.stream_large_bodies)
+
+        if options.filtstr:
+            self.filt = filt.parse(options.filtstr)
         else:
             self.filt = None
 
@@ -80,10 +94,10 @@ class DumpMaster(flow.FlowMaster):
         if options.stickyauth:
             self.set_stickyauth(options.stickyauth)
 
-        if options.wfile:
-            path = os.path.expanduser(options.wfile)
+        if options.outfile:
+            path = os.path.expanduser(options.outfile[0])
             try:
-                f = file(path, "wb")
+                f = file(path, options.outfile[1])
                 self.start_stream(f, self.filt)
             except IOError, v:
                 raise DumpError(v.strerror)
@@ -101,7 +115,10 @@ class DumpMaster(flow.FlowMaster):
                 self._readflow(options.server_replay),
                 options.kill, options.rheaders,
                 not options.keepserving,
-                options.nopop
+                options.nopop,
+                options.replay_ignore_params,
+                options.replay_ignore_content,
+                options.replay_ignore_payload_params,
             )
 
         if options.client_replay:
@@ -126,10 +143,10 @@ class DumpMaster(flow.FlowMaster):
             try:
                 self.load_flows(freader)
             except flow.FlowReadError, v:
-                self.add_event("Flow file corrupted. Stopped loading.")
+                self.add_event("Flow file corrupted. Stopped loading.", "error")
 
         if self.o.app:
-            self.start_app(self.o.app_host, self.o.app_port, self.o.app_external)
+            self.start_app(self.o.app_host, self.o.app_port)
 
     def _readflow(self, path):
         path = os.path.expanduser(path)
@@ -141,7 +158,8 @@ class DumpMaster(flow.FlowMaster):
         return flows
 
     def add_event(self, e, level="info"):
-        if self.eventlog:
+        needed = dict(error=0, info=1, debug=2).get(level, 1)
+        if self.o.verbosity >= needed:
             print >> self.outfile, e
             self.outfile.flush()
 
@@ -155,13 +173,18 @@ class DumpMaster(flow.FlowMaster):
             return
 
         if f.response:
-            sz = utils.pretty_size(len(f.response.content))
-            if self.o.verbosity > 0:
+            if self.o.flow_detail > 0:
+                if f.response.content == http.CONTENT_MISSING:
+                    sz = "(content missing)"
+                else:
+                    sz = utils.pretty_size(len(f.response.content))
                 result = " << %s %s"%(str_response(f.response), sz)
-            if self.o.verbosity > 1:
+            if self.o.flow_detail > 1:
                 result = result + "\n\n" + self.indent(4, f.response.headers)
-            if self.o.verbosity > 2:
-                if utils.isBin(f.response.content):
+            if self.o.flow_detail > 2:
+                if f.response.content == http.CONTENT_MISSING:
+                    cont = self.indent(4, "(content missing)")
+                elif utils.isBin(f.response.content):
                     d = netlib.utils.hexdump(f.response.content)
                     d = "\n".join("%s\t%s %s"%i for i in d)
                     cont = self.indent(4, d)
@@ -173,47 +196,45 @@ class DumpMaster(flow.FlowMaster):
         elif f.error:
             result = " << %s"%f.error.msg
 
-        if self.o.verbosity == 1:
-            print >> self.outfile, str_request(f.request, self.showhost)
+        if self.o.flow_detail == 1:
+            print >> self.outfile, str_request(f, self.showhost)
             print >> self.outfile, result
-        elif self.o.verbosity == 2:
-            print >> self.outfile, str_request(f.request, self.showhost)
+        elif self.o.flow_detail == 2:
+            print >> self.outfile, str_request(f, self.showhost)
             print >> self.outfile, self.indent(4, f.request.headers)
             print >> self.outfile
             print >> self.outfile, result
             print >> self.outfile, "\n"
-        elif self.o.verbosity >= 3:
-            print >> self.outfile, str_request(f.request, self.showhost)
+        elif self.o.flow_detail >= 3:
+            print >> self.outfile, str_request(f, self.showhost)
             print >> self.outfile, self.indent(4, f.request.headers)
-            if utils.isBin(f.request.content):
-                print >> self.outfile, self.indent(4, netlib.utils.hexdump(f.request.content))
+            if f.request.content != http.CONTENT_MISSING and utils.isBin(f.request.content):
+                d = netlib.utils.hexdump(f.request.content)
+                d = "\n".join("%s\t%s %s"%i for i in d)
+                print >> self.outfile, self.indent(4, d)
             elif f.request.content:
                 print >> self.outfile, self.indent(4, f.request.content)
             print >> self.outfile
             print >> self.outfile, result
             print >> self.outfile, "\n"
-        if self.o.verbosity:
+        if self.o.flow_detail:
             self.outfile.flush()
 
-    def handle_log(self, l):
-        self.add_event(l.msg)
-        l.reply()
-
-    def handle_request(self, r):
-        f = flow.FlowMaster.handle_request(self, r)
+    def handle_request(self, f):
+        flow.FlowMaster.handle_request(self, f)
         if f:
-            r.reply()
+            f.reply()
         return f
 
-    def handle_response(self, msg):
-        f = flow.FlowMaster.handle_response(self, msg)
+    def handle_response(self, f):
+        flow.FlowMaster.handle_response(self, f)
         if f:
-            msg.reply()
+            f.reply()
             self._process_flow(f)
         return f
 
-    def handle_error(self, msg):
-        f = flow.FlowMaster.handle_error(self, msg)
+    def handle_error(self, f):
+        flow.FlowMaster.handle_error(self, f)
         if f:
             self._process_flow(f)
         return f
@@ -223,8 +244,7 @@ class DumpMaster(flow.FlowMaster):
 
     def run(self):  # pragma: no cover
         if self.o.rfile and not self.o.keepserving:
-            for script in self.scripts:
-                self.unload_script(script)
+            self.shutdown()
             return
         try:
             return flow.FlowMaster.run(self)

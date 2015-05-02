@@ -1,5 +1,6 @@
+from __future__ import absolute_import
 import urwid
-import common
+from . import common
 
 def _mkhelp():
     text = []
@@ -68,7 +69,7 @@ class BodyPile(urwid.Pile):
             else:
                 self.widget_list[1].header = self.inactive_header
             key = None
-        elif key == "v":
+        elif key == "e":
             self.master.toggle_eventlog()
             key = None
 
@@ -119,13 +120,15 @@ class ConnectionItem(common.WWrap):
             self.master.start_server_playback(
                 [i.copy() for i in self.master.state.view],
                 self.master.killextra, self.master.rheaders,
-                False, self.master.nopop
+                False, self.master.nopop,
+                self.master.options.replay_ignore_params, self.master.options.replay_ignore_content
             )
         elif k == "t":
             self.master.start_server_playback(
                 [self.flow.copy()],
                 self.master.killextra, self.master.rheaders,
-                False, self.master.nopop
+                False, self.master.nopop,
+                self.master.options.replay_ignore_params, self.master.options.replay_ignore_content
             )
         else:
             self.master.path_prompt(
@@ -137,7 +140,7 @@ class ConnectionItem(common.WWrap):
     def keypress(self, (maxcol,), key):
         key = common.shortcuts(key)
         if key == "a":
-            self.flow.accept_intercept()
+            self.flow.accept_intercept(self.master)
             self.master.sync_list_view()
         elif key == "d":
             self.flow.kill(self.master)
@@ -147,7 +150,6 @@ class ConnectionItem(common.WWrap):
             f = self.master.duplicate_flow(self.flow)
             self.master.view_flow(f)
         elif key == "r":
-            self.flow.backup()
             r = self.master.replay_request(self.flow)
             if r:
                 self.master.statusbar.message(r)
@@ -261,7 +263,7 @@ class FlowListBox(urwid.ListBox):
                 self.master.path_prompt(
                     "Stream flows to: ",
                     self.master.state.last_saveload,
-                    self.master.start_stream
+                    self.master.start_stream_to_path
                 )
         else:
             return urwid.ListBox.keypress(self, size, key)

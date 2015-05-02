@@ -1,11 +1,16 @@
-import os, sys, datetime
+import os
+import sys
+import datetime
 import countershape
-from countershape import Page, Directory, PythonModule, markup, model
+from countershape import Page, Directory, markup, model
 import countershape.template
-sys.path.insert(0, "..")
+
+MITMPROXY_SRC = os.path.abspath(
+    os.path.expanduser(os.environ.get("MITMPROXY_SRC", ".."))
+)
+sys.path.insert(0, MITMPROXY_SRC)
 from libmproxy import filt, version
 
-MITMPROXY_SRC = os.environ.get("MITMPROXY_SRC", os.path.abspath(".."))
 ns.VERSION = version.VERSION
 
 if ns.options.website:
@@ -23,44 +28,22 @@ ns.docMaintainer = "Aldo Cortesi"
 ns.docMaintainerEmail = "aldo@corte.si"
 ns.copyright = u"\u00a9 mitmproxy project, %s" % datetime.date.today().year
 
+
 def mpath(p):
     p = os.path.join(MITMPROXY_SRC, p)
     return os.path.expanduser(p)
 
-with open(mpath("README.mkd")) as f:
-        readme = f.read()
-        ns.index_contents = readme.split("\n", 1)[1] #remove first line (contains build status)
 
 def example(s):
     d = file(mpath(s)).read().rstrip()
     extemp = """<div class="example">%s<div class="example_legend">(%s)</div></div>"""
     return extemp%(countershape.template.Syntax("py")(d), s)
+
+
 ns.example = example
 
 
-filt_help = []
-for i in filt.filt_unary:
-    filt_help.append(
-        ("~%s"%i.code, i.help)
-    )
-for i in filt.filt_rex:
-    filt_help.append(
-        ("~%s regex"%i.code, i.help)
-    )
-for i in filt.filt_int:
-    filt_help.append(
-        ("~%s int"%i.code, i.help)
-    )
-filt_help.sort()
-filt_help.extend(
-    [
-        ("!", "unary not"),
-        ("&", "and"),
-        ("|", "or"),
-        ("(...)", "grouping"),
-    ]
-)
-ns.filt_help = filt_help
+ns.filt_help = filt.help
 
 
 def nav(page, current, state):
@@ -73,12 +56,16 @@ def nav(page, current, state):
 ns.nav = nav
 ns.navbar = countershape.template.File(None, "_nav.html")
 
+
 pages = [
     Page("index.html", "Introduction"),
     Page("install.html", "Installation"),
+    Page("howmitmproxy.html", "How mitmproxy works"),
+    Page("modes.html", "Modes of Operation"),
+
     Page("mitmproxy.html", "mitmproxy"),
     Page("mitmdump.html", "mitmdump"),
-    Page("howmitmproxy.html", "How mitmproxy works"),
+    Page("config.html", "configuration"),
 
     Page("ssl.html", "Overview"),
     Directory("certinstall"),
