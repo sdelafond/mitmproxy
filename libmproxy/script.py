@@ -1,5 +1,6 @@
+from __future__ import absolute_import
 import os, traceback, threading, shlex
-import controller
+from . import controller
 
 class ScriptError(Exception):
     pass
@@ -9,15 +10,15 @@ class ScriptContext:
     def __init__(self, master):
         self._master = master
 
-    def log(self, *args, **kwargs):
+    def log(self, message, level="info"):
         """
             Logs an event.
 
-            How this is handled depends on the front-end. mitmdump will display
-            events if the eventlog flag ("-e") was passed. mitmproxy sends
-            output to the eventlog for display ("v" keyboard shortcut).
+            By default, only events with level "error" get displayed. This can be controlled with the "-v" switch.
+            How log messages are handled depends on the front-end. mitmdump will print them to stdout,
+            mitmproxy sends output to the eventlog for display ("e" keyboard shortcut).
         """
-        self._master.add_event(*args, **kwargs)
+        self._master.add_event(message, level)
 
     def duplicate_flow(self, f):
         """
@@ -37,6 +38,10 @@ class ScriptContext:
         """
         self._master.replay_request(f)
 
+    @property
+    def app_registry(self):
+        return self._master.apps
+
 
 class Script:
     """
@@ -54,10 +59,17 @@ class Script:
 
     @classmethod
     def parse_command(klass, command):
-        args = shlex.split(command, posix=(os.name != "nt"))
+        if not command or not command.strip():
+            raise ScriptError("Empty script command.")
+        if os.name == "nt":  # Windows: escape all backslashes in the path.
+            backslashes = shlex.split(command, posix=False)[0].count("\\")
+            command = command.replace("\\", "\\\\", backslashes)
+        args = shlex.split(command)
         args[0] = os.path.expanduser(args[0])
         if not os.path.exists(args[0]):
-            raise ScriptError("Command not found.")
+            raise ScriptError(("Script file not found: %s.\r\n"
+                               "If you script path contains spaces, "
+                               "make sure to wrap it in additional quotes, e.g. -s \"'./foo bar/baz.py' --args\".") % args[0])
         elif not os.path.isfile(args[0]):
             raise ScriptError("Not a file: %s" % args[0])
         return args
@@ -102,23 +114,38 @@ class Script:
             return (False, None)
 
 
-def _handle_concurrent_reply(fn, o, args=[], kwargs={}):
-    reply = o.reply
-    o.reply = controller.DummyReply()
+class ReplyProxy(object):
+    def __init__(self, original_reply):
+        self._ignore_calls = 1
+        self.lock = threading.Lock()
+        self.original_reply = original_reply
+
+    def __call__(self, *args, **kwargs):
+        with self.lock:
+            if self._ignore_calls > 0:
+                self._ignore_calls -= 1
+                return
+        self.original_reply(*args, **kwargs)
+
+    def __getattr__ (self, k):
+        return getattr(self.original_reply, k)
+
+
+def _handle_concurrent_reply(fn, o, *args, **kwargs):
+    # Make first call to o.reply a no op
+
+    reply_proxy = ReplyProxy(o.reply)
+    o.reply = reply_proxy
+
     def run():
         fn(*args, **kwargs)
-        reply(o)
-    threading.Thread(target=run).start()
+        o.reply()  # If the script did not call .reply(), we have to do it now.
+    threading.Thread(target=run, name="ScriptThread").start()
 
 
 def concurrent(fn):
-    if fn.func_name in ["request", "response", "error"]:
-        def _concurrent(ctx, flow):
-            r = getattr(flow, fn.func_name)
-            _handle_concurrent_reply(fn, r, [ctx, flow])
-        return _concurrent
-    elif fn.func_name in ["clientconnect", "serverconnect", "clientdisconnect"]:
-        def _concurrent(ctx, conn):
-            _handle_concurrent_reply(fn, conn, [ctx, conn])
+    if fn.func_name in ("request", "response", "error", "clientconnect", "serverconnect", "clientdisconnect"):
+        def _concurrent(ctx, obj):
+            _handle_concurrent_reply(fn, obj, ctx, obj)
         return _concurrent
     raise NotImplementedError("Concurrent decorator not supported for this method.")
