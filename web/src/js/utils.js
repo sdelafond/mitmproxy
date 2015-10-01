@@ -1,3 +1,11 @@
+var $ = require("jquery");
+var _ = require("lodash");
+var actions = require("./actions.js");
+
+window.$ = $;
+window._ = _;
+window.React = require("react");
+
 var Key = {
     UP: 38,
     DOWN: 40,
@@ -12,6 +20,7 @@ var Key = {
     TAB: 9,
     SPACE: 32,
     BACKSPACE: 8,
+    SHIFT: 16
 };
 // Add A-Z
 for (var i = 65; i <= 90; i++) {
@@ -20,14 +29,20 @@ for (var i = 65; i <= 90; i++) {
 
 
 var formatSize = function (bytes) {
-    var size = bytes;
-    var prefix = ["B", "KB", "MB", "GB", "TB"];
-    var i = 0;
-    while (Math.abs(size) >= 1024 && i < prefix.length - 1) {
-        i++;
-        size = size / 1024;
+    if (bytes === 0)
+        return "0";
+    var prefix = ["b", "kb", "mb", "gb", "tb"];
+    for (var i = 0; i < prefix.length; i++) {
+        if (Math.pow(1024, i + 1) > bytes) {
+            break;
+        }
     }
-    return (Math.floor(size * 100) / 100.0).toFixed(2) + prefix[i];
+    var precision;
+    if (bytes % Math.pow(1024, i) === 0)
+        precision = 0;
+    else
+        precision = 1;
+    return (bytes / Math.pow(1024, i)).toFixed(precision) + prefix[i];
 };
 
 
@@ -49,58 +64,49 @@ var formatTimeStamp = function (seconds) {
     return ts.replace("T", " ").replace("Z", "");
 };
 
-
-function EventEmitter() {
-    this.listeners = {};
+// At some places, we need to sort strings alphabetically descending,
+// but we can only provide a key function.
+// This beauty "reverses" a JS string.
+var end = String.fromCharCode(0xffff);
+function reverseString(s) {
+    return String.fromCharCode.apply(String,
+            _.map(s.split(""), function (c) {
+                return 0xffff - c.charCodeAt(0);
+            })
+        ) + end;
 }
-EventEmitter.prototype.emit = function (event) {
-    if (!(event in this.listeners)) {
-        return;
-    }
-    var args = Array.prototype.slice.call(arguments, 1);
-    this.listeners[event].forEach(function (listener) {
-        listener.apply(this, args);
-    }.bind(this));
-};
-EventEmitter.prototype.addListener = function (events, f) {
-    events.split(" ").forEach(function (event) {
-        this.listeners[event] = this.listeners[event] || [];
-        this.listeners[event].push(f);
-    }.bind(this));
-};
-EventEmitter.prototype.removeListener = function (events, f) {
-    if (!(events in this.listeners)) {
-        return false;
-    }
-    events.split(" ").forEach(function (event) {
-        var index = this.listeners[event].indexOf(f);
-        if (index >= 0) {
-            this.listeners[event].splice(index, 1);
-        }
-    }.bind(this));
-};
-
 
 function getCookie(name) {
-    var r = document.cookie.match("\\b" + name + "=([^;]*)\\b");
+    var r = document.cookie.match(new RegExp("\\b" + name + "=([^;]*)\\b"));
     return r ? r[1] : undefined;
 }
 var xsrf = $.param({_xsrf: getCookie("_xsrf")});
 
 //Tornado XSRF Protection.
-jQuery.ajaxPrefilter(function (options) {
+$.ajaxPrefilter(function (options) {
     if (["post", "put", "delete"].indexOf(options.type.toLowerCase()) >= 0 && options.url[0] === "/") {
-        if (options.data) {
-            options.data += ("&" + xsrf);
+        if(options.url.indexOf("?") === -1){
+            options.url += "?" + xsrf;
         } else {
-            options.data = xsrf;
+            options.url += "&" + xsrf;
         }
     }
 });
 // Log AJAX Errors
 $(document).ajaxError(function (event, jqXHR, ajaxSettings, thrownError) {
+    if (thrownError === "abort") {
+        return;
+    }
     var message = jqXHR.responseText;
-    console.error(message, arguments);
-    EventLogActions.add_event(thrownError + ": " + message);
-    window.alert(message);
+    console.error(thrownError, message, arguments);
+    actions.EventLogActions.add_event(thrownError + ": " + message);
+    alert(message);
 });
+
+module.exports = {
+    formatSize: formatSize,
+    formatTimeDelta: formatTimeDelta,
+    formatTimeStamp: formatTimeStamp,
+    reverseString: reverseString,
+    Key: Key,
+};

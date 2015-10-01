@@ -1,7 +1,13 @@
-var gulp = require("gulp");
-var merge = require('merge-stream');
+var path = require('path');
 
+var packagejs = require('./package.json');
+var conf = require('./conf.js');
+
+// Sorted alphabetically!
+var browserify = require('browserify');
+var gulp = require("gulp");
 var concat = require('gulp-concat');
+var connect = require('gulp-connect');
 var jshint = require("gulp-jshint");
 var less = require("gulp-less");
 var livereload = require("gulp-livereload");
@@ -9,171 +15,272 @@ var minifyCSS = require('gulp-minify-css');
 var notify = require("gulp-notify");
 var peg = require("gulp-peg");
 var plumber = require("gulp-plumber");
-var qunit = require("gulp-qunit");
 var react = require("gulp-react");
 var rename = require("gulp-rename");
+var replace = require('gulp-replace');
+var rev = require("gulp-rev");
 var sourcemaps = require('gulp-sourcemaps');
 var uglify = require('gulp-uglify');
+var _ = require('lodash');
+var map = require("map-stream");
+var reactify = require('reactify');
+var buffer = require('vinyl-buffer');
+var source = require('vinyl-source-stream');
+var transform = require('vinyl-transform');
+
+// FIXME: react-with-addons.min.js for prod use issue
+// FIXME: Sourcemap URLs don't work correctly.
+// FIXME: Why don't we use gulp-rev's manifest feature?
+
+var manifest = {
+    "vendor.css": "vendor.css",
+    "app.css": "app.css",
+    "vendor.js": "vendor.js",
+    "app.js": "app.js",
+};
+
+var vendor_packages = _.difference(
+    _.union(
+        _.keys(packagejs.dependencies),
+        conf.js.vendor_includes
+    ),
+    conf.js.vendor_excludes
+);
 
 
-var dont_break_on_errors = function () {
-    return plumber(function (error) {
-        notify.onError("<%= error.message %>").apply(this, arguments);
-        this.emit('end');
+// Custom linting reporter used for error notify
+var jsHintErrorReporter = function(){
+    return map(function (file, cb) {
+        if (file.jshint && !file.jshint.success) {
+            file.jshint.results.forEach(function (err) {
+                if (err) {
+                    var msg = [
+                        path.basename(file.path),
+                        'Line: ' + err.error.line,
+                        'Reason: ' + err.error.reason
+                    ];
+                    notify.onError(
+                        "Error: <%= error.message %>"
+                    )(new Error(msg.join("\n")));
+                }
+            });
+        }
+        cb(null, file);
+    })
+};
+
+function save_rev(){
+    return map(function(file, callback){
+        if (file.revOrigBase){
+            manifest[path.basename(file.revOrigPath)] = path.basename(file.path);
+        }
+        callback(null, file);
+    })
+}
+
+var dont_break_on_errors = function(){
+    return plumber(
+        function(error){
+            notify.onError("Error: <%= error.message %>").apply(this, arguments);
+            this.emit('end');
+        }
+    );
+};
+
+/*
+ * Sourcemaps are a wonderful way to develop directly from the chrome devtools.
+ * However, generating correct sourcemaps is a huge PITA, especially on Windows.
+ * Fixing this upstream is tedious as apparently nobody really cares and
+ * a single misbehaving transform breaks everything.
+ * Thus, we just manually fix all paths.
+ */
+//Normalize \ to / on Windows.
+function unixStylePath(filePath) {
+  return filePath.split(path.sep).join('/');
+}
+// Hijack the sourceRoot attr to do our transforms
+function fixSourceMapPaths(file){
+    file.sourceMap.sources = file.sourceMap.sources.map(function (x) {
+        return unixStylePath(path.relative(".", x));
     });
-};
-
-var path = {
-    dist: "../libmproxy/web/",
-    js: {
-        vendor: [
-            'vendor/jquery/jquery.js',
-            'vendor/lodash/lodash.js',
-            'vendor/react/react-with-addons.js',
-            'vendor/react-router/react-router.js',
-        ],
-        app: [
-            'js/utils.js',
-            'js/dispatcher.js',
-            'js/actions.js',
-            'js/filt/filt.js',
-            'js/flow/utils.js',
-            'js/store/store.js',
-            'js/store/view.js',
-            'js/connection.js',
-            'js/components/utils.jsx.js',
-            'js/components/virtualscroll.jsx.js',
-            'js/components/header.jsx.js',
-            'js/components/flowtable-columns.jsx.js',
-            'js/components/flowtable.jsx.js',
-            'js/components/flowdetail.jsx.js',
-            'js/components/mainview.jsx.js',
-            'js/components/eventlog.jsx.js',
-            'js/components/footer.jsx.js',
-            'js/components/proxyapp.jsx.js',
-            'js/app.js',
-        ],
-    },
-    peg: "js/filt/filt.pegjs",
-    css: {
-        vendor: ["css/vendor.less"],
-        app: ["css/app.less"],
-        all: ["css/**"]
-    },
-    vendor: ["vendor/**"],
-    fonts: ["src/vendor/fontawesome/fontawesome-webfont.*"],
-    html: ["*.html", "!benchmark.html", "!test.html"],
-    images: ["images/**"],
-    test: ["test.html"],
-    opts: {base: "src", cwd: "src"}
-};
-
+    return "/";
+}
+// Browserify fails for paths starting with "..".
+function fixBrowserifySourceMapPaths(file){
+    file.sourceMap.sources = file.sourceMap.sources.map(function (x) {
+        return x.replace("src/js/node_modules","node_modules");
+    });
+    return fixSourceMapPaths(file);
+}
 
 gulp.task("fonts", function () {
-    return gulp.src(path.fonts)
-        .pipe(gulp.dest(path.dist + "static/fonts"));
+    return gulp.src(conf.fonts)
+        .pipe(gulp.dest(conf.static + "/fonts"))
 });
 
-
 function styles_dev(files) {
-    return (gulp.src(files, path.opts)
+    return (gulp.src(files)
         .pipe(dont_break_on_errors())
         .pipe(sourcemaps.init())
         .pipe(less())
-        .pipe(sourcemaps.write(".", {sourceRoot: "/static"}))
-        .pipe(gulp.dest(path.dist + "static"))
-        .pipe(livereload({auto: false})));
+        .pipe(sourcemaps.write(".", {sourceRoot: fixSourceMapPaths}))
+        .pipe(gulp.dest(conf.static))
+        .pipe(livereload({ auto: false })));
 }
-gulp.task("styles-app-dev", styles_dev.bind(undefined, path.css.app));
-gulp.task("styles-vendor-dev", styles_dev.bind(undefined, path.css.vendor));
-gulp.task("styles-dev", ["styles-app-dev", "styles-vendor-dev"]);
+gulp.task("styles-app-dev", function(){
+    styles_dev(conf.css.app);
+});
+gulp.task("styles-vendor-dev", function(){
+    styles_dev(conf.css.vendor);
+});
 
 
 function styles_prod(files) {
-    return (gulp.src(files, path.opts)
+    return (gulp.src(files)
         .pipe(less())
-        // No sourcemaps support yet :-/
-        // https://github.com/jonathanepollack/gulp-minify-css/issues/34
         .pipe(minifyCSS())
-        .pipe(gulp.dest(path.dist + "static"))
-        .pipe(livereload({auto: false})));
+        .pipe(rev())
+        .pipe(save_rev())
+        .pipe(gulp.dest(conf.static))
+        .pipe(livereload({ auto: false })));
 }
-gulp.task("styles-app-prod", styles_prod.bind(undefined, path.css.app));
-gulp.task("styles-vendor-prod", styles_prod.bind(undefined, path.css.vendor));
-gulp.task("styles-prod", ["styles-app-prod", "styles-vendor-prod"]);
+gulp.task("styles-app-prod", function(){
+    styles_prod(conf.css.app);
+});
+gulp.task("styles-vendor-prod", function(){
+    styles_prod(conf.css.vendor);
+});
 
 
-function scripts_dev(files, filename) {
-    return gulp.src(files, path.opts)
-        .pipe(dont_break_on_errors())
-        .pipe(sourcemaps.init())
-        .pipe(react())
-        .pipe(concat(filename))
-        .pipe(sourcemaps.write(".", {sourceRoot: "/static"}))
-        .pipe(gulp.dest(path.dist + "static/js"))
-        .pipe(livereload({auto: false}));
+function vendor_stream(debug){
+    var vendor = browserify(vendor_packages, {debug: debug});
+    _.each(vendor_packages, function(v){
+        vendor.require(v);
+    });
+    return vendor.bundle()
+        .pipe(source("dummy.js"))
+        .pipe(rename("vendor.js"));
 }
-gulp.task("scripts-app-dev", scripts_dev.bind(undefined, path.js.app, "app.js"));
-gulp.task("scripts-vendor-dev", scripts_dev.bind(undefined, path.js.vendor, "vendor.js"));
-gulp.task("scripts-dev", ["scripts-app-dev", "scripts-vendor-dev"]);
-
-
-function scripts_prod(files, filename) {
-    return gulp.src(files, path.opts)
-        .pipe(react())
-        .pipe(concat(filename))
+gulp.task("scripts-vendor-dev", function (){
+    return vendor_stream(false)
+        .pipe(gulp.dest(conf.static));
+});
+gulp.task("scripts-vendor-prod", function(){
+    return vendor_stream(false)
+        .pipe(buffer())
         .pipe(uglify())
-        .pipe(gulp.dest(path.dist + "static/js"))
-        .pipe(livereload({auto: false}));
+        .pipe(rev())
+        .pipe(save_rev())
+        .pipe(gulp.dest(conf.static));
+});
+
+
+function app_stream(debug) {
+    var browserified = transform(function(filename) {
+        var b = browserify(filename, {debug: debug});
+        _.each(vendor_packages, function(v){
+            b.external(v);
+        });
+        b.transform(reactify);
+        return b.bundle();
+    });
+
+    return gulp.src([conf.js.app], {base: "."})
+        .pipe(dont_break_on_errors())
+        .pipe(browserified)
+        .pipe(sourcemaps.init({ loadMaps: true }))
+        .pipe(rename("app.js"));
 }
-gulp.task("scripts-app-prod", scripts_prod.bind(undefined, path.js.app, "app.js"));
-gulp.task("scripts-vendor-prod", scripts_prod.bind(undefined, path.js.vendor, "vendor.js"));
-gulp.task("scripts-prod", ["scripts-app-prod", "scripts-vendor-prod"]);
+
+gulp.task('scripts-app-dev', function () {
+    return app_stream(true)
+        .pipe(sourcemaps.write('./', {sourceRoot: fixBrowserifySourceMapPaths}))
+        .pipe(gulp.dest(conf.static))
+        .pipe(livereload({ auto: false }));
+});
+
+gulp.task('scripts-app-prod', function () {
+    return app_stream(true)
+        .pipe(buffer())
+        .pipe(uglify())
+        .pipe(rev())
+        .pipe(sourcemaps.write('./', {sourceRoot: fixBrowserifySourceMapPaths}))
+        .pipe(save_rev())
+        .pipe(gulp.dest(conf.static));
+});
 
 
 gulp.task("jshint", function () {
-    return gulp.src(path.js.app.concat(["!"+path.peg.replace("pegjs","js")]), path.opts)
+    return gulp.src(conf.js.jshint)
         .pipe(dont_break_on_errors())
         .pipe(react())
         .pipe(jshint())
-        .pipe(jshint.reporter("jshint-stylish"));
+        .pipe(jshint.reporter("jshint-stylish"))
+        .pipe(jsHintErrorReporter());
 });
+
+gulp.task("copy", function(){
+    return gulp.src(conf.copy, {base: conf.src})
+        .pipe(gulp.dest(conf.static));
+});
+
+function templates(){
+    return gulp.src(conf.templates, {base: conf.src})
+        .pipe(replace(/\{\{\{(\S*)\}\}\}/g, function(match, p1) {
+            return manifest[p1];
+        }))
+        .pipe(gulp.dest(conf.dist));
+}
+gulp.task('templates', templates);
 
 gulp.task("peg", function () {
-    return gulp.src(path.peg, path.opts)
+    return gulp.src(conf.peg, {base: conf.src})
         .pipe(dont_break_on_errors())
-        .pipe(peg({exportVar:"Filt"}))
-        .pipe(gulp.dest(".", path.opts));
+        .pipe(peg())
+        .pipe(gulp.dest("src/"));
 });
 
-gulp.task("images", function () {
-    //(spriting code in commit 4ca720b55680e40b3a4361141a2ad39f9de81111)
-    return gulp.src(path.images, path.opts)
-        .pipe(gulp.dest(path.dist + "static"));
+gulp.task('connect', function() {
+    if(conf.connect){
+        connect.server({
+            port: conf.connect.port
+        });
+    }
 });
 
-gulp.task("html", function () {
-    return gulp.src(path.html, path.opts)
-        .pipe(gulp.dest(path.dist + "templates"))
-        .pipe(livereload({auto: false}));
-});
+gulp.task(
+    "dev",
+    [
+        "fonts",
+        "copy",
+        "styles-vendor-dev",
+        "styles-app-dev",
+        "scripts-vendor-dev",
+        "peg",
+        "scripts-app-dev",
+    ],
+    templates
+);
+gulp.task(
+    "prod",
+    [
+        "fonts",
+        "copy",
+        "styles-vendor-prod",
+        "styles-app-prod",
+        "scripts-vendor-prod",
+        "peg",
+        "scripts-app-prod",
+    ],
+    templates
+);
 
-
-gulp.task('test', function () {
-    return gulp.src(path.test, path.opts)
-        .pipe(qunit({verbose: true}));
-});
-
-
-common = ["fonts", "html", "jshint", "peg", "images"];
-gulp.task("dev", common.concat(["styles-dev", "scripts-dev"]));
-gulp.task("prod", common.concat(["styles-prod", "scripts-prod"]));
-
-gulp.task("default", ["dev"], function () {
+gulp.task("default", ["dev", "connect"], function () {
     livereload.listen({auto: true});
-    gulp.watch(path.vendor, path.opts, ["scripts-vendor-dev", "styles-vendor-dev"]);
-    gulp.watch(path.js.app, path.opts, ["scripts-app-dev", "jshint"]);
-    gulp.watch(path.peg, path.opts, ["peg"]);
-    gulp.watch(path.css.all, path.opts, ["styles-app-dev"]);
-    gulp.watch(path.html, path.opts, ["html"]);
+    gulp.watch(["src/css/vendor*"], ["styles-vendor-dev"]);
+    gulp.watch(conf.peg, ["peg", "scripts-app-dev"]);
+    gulp.watch(["src/js/**"], ["scripts-app-dev", "jshint"]);
+    gulp.watch(["src/css/**"], ["styles-app-dev"]);
+    gulp.watch(conf.templates, ["templates"]);
+    gulp.watch(conf.copy, ["copy"]);
 });
