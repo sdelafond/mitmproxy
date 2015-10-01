@@ -1,3 +1,10 @@
+mitmproxy (0.12.1-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #789782)
+  * Switch to dh
+
+ -- Sebastien Delafond <seb@debian.org>  Thu, 01 Oct 2015 16:33:03 +0200
+
 mitmproxy (0.11.3-3) unstable; urgency=medium
 
   * Versioned-depend on python-tornado >= 4.0.2 and python-netlib >=
