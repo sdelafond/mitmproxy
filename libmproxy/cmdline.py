@@ -65,7 +65,7 @@ def parse_replace_hook(s):
     patt, regex, replacement = _parse_hook(s)
     try:
         re.compile(regex)
-    except re.error, e:
+    except re.error as e:
         raise ParseException("Malformed replacement regex: %s" % str(e.message))
     return patt, regex, replacement
 
@@ -100,24 +100,31 @@ def parse_setheader(s):
 
 
 def parse_server_spec(url):
-    normalized_url = re.sub("^https?2", "", url)
-
-    p = http.parse_url(normalized_url)
-    if not p or not p[1]:
+    p = http.parse_url(url)
+    if not p or not p[1] or p[0] not in ("http", "https"):
         raise configargparse.ArgumentTypeError(
             "Invalid server specification: %s" % url
         )
 
-    if url.lower().startswith("https2http"):
-        ssl = [True, False]
-    elif url.lower().startswith("http2https"):
-        ssl = [False, True]
-    elif url.lower().startswith("https"):
+    if p[0].lower() == "https":
         ssl = [True, True]
     else:
         ssl = [False, False]
 
     return ssl + list(p[1:3])
+
+
+def parse_server_spec_special(url):
+    """
+    Provides additional support for http2https and https2http schemes.
+    """
+    normalized_url = re.sub("^https?2", "", url)
+    ret = parse_server_spec(normalized_url)
+    if url.lower().startswith("https2http"):
+        ret[0] = True
+    elif url.lower().startswith("http2https"):
+        ret[0] = False
+    return ret
 
 
 def get_common_options(options):
@@ -134,17 +141,17 @@ def get_common_options(options):
     for i in options.replace:
         try:
             p = parse_replace_hook(i)
-        except ParseException, e:
+        except ParseException as e:
             raise configargparse.ArgumentTypeError(e.message)
         reps.append(p)
     for i in options.replace_file:
         try:
             patt, rex, path = parse_replace_hook(i)
-        except ParseException, e:
+        except ParseException as e:
             raise configargparse.ArgumentTypeError(e.message)
         try:
             v = open(path, "rb").read()
-        except IOError, e:
+        except IOError as e:
             raise configargparse.ArgumentTypeError(
                 "Could not read replace file: %s" % path
             )
@@ -154,7 +161,7 @@ def get_common_options(options):
     for i in options.setheader:
         try:
             p = parse_setheader(i)
-        except ParseException, e:
+        except ParseException as e:
             raise configargparse.ArgumentTypeError(e.message)
         setheaders.append(p)
 
@@ -184,7 +191,8 @@ def get_common_options(options):
         nopop=options.nopop,
         replay_ignore_content = options.replay_ignore_content,
         replay_ignore_params = options.replay_ignore_params,
-        replay_ignore_payload_params = options.replay_ignore_payload_params
+        replay_ignore_payload_params = options.replay_ignore_payload_params,
+        replay_ignore_host = options.replay_ignore_host
     )
 
 
@@ -212,7 +220,7 @@ def common_options(parser):
     parser.add_argument(
         "--cadir",
         action="store", type=str, dest="cadir", default=config.CA_DIR,
-        help="Location of the default mitmproxy CA files. (%s)"%config.CA_DIR
+        help="Location of the default mitmproxy CA files. (%s)" % config.CA_DIR
     )
     parser.add_argument(
         "--host",
@@ -336,7 +344,7 @@ def common_options(parser):
     group.add_argument(
         "-R", "--reverse",
         action="store",
-        type=parse_server_spec,
+        type=parse_server_spec_special,
         dest="reverse_proxy",
         default=None,
         help="""
@@ -410,14 +418,14 @@ def common_options(parser):
     group = parser.add_argument_group("Client Replay")
     group.add_argument(
         "-c", "--client-replay",
-        action="store", dest="client_replay", default=None, metavar="PATH",
+        action="append", dest="client_replay", default=None, metavar="PATH",
         help="Replay client requests from a saved file."
     )
 
     group = parser.add_argument_group("Server Replay")
     group.add_argument(
         "-S", "--server-replay",
-        action="store", dest="server_replay", default=None, metavar="PATH",
+        action="append", dest="server_replay", default=None, metavar="PATH",
         help="Replay server responses from a saved file."
     )
     group.add_argument(
@@ -457,7 +465,7 @@ def common_options(parser):
         "--replay-ignore-payload-param",
         action="append", dest="replay_ignore_payload_params", type=str,
         help="""
-            Request's payload parameters (application/x-www-form-urlencoded) to
+            Request's payload parameters (application/x-www-form-urlencoded or multipart/form-data) to
             be ignored while searching for a saved flow to replay.
             Can be passed multiple times.
         """
@@ -471,6 +479,12 @@ def common_options(parser):
             to replay. Can be passed multiple times.
         """
     )
+    group.add_argument(
+        "--replay-ignore-host",
+        action="store_true",
+        dest="replay_ignore_host",
+        default=False,
+        help="Ignore request's destination host while searching for a saved flow to replay")
 
     group = parser.add_argument_group(
         "Replacements",
@@ -561,9 +575,15 @@ def mitmproxy():
     )
     common_options(parser)
     parser.add_argument(
-        "--palette", type=str, default="dark",
+        "--palette", type=str, default=palettes.DEFAULT,
         action="store", dest="palette",
+        choices=sorted(palettes.palettes.keys()),
         help="Select color palette: " + ", ".join(palettes.palettes.keys())
+    )
+    parser.add_argument(
+        "--palette-transparent",
+        action="store_true", dest="palette_transparent", default=False,
+        help="Set transparent background for palette."
     )
     parser.add_argument(
         "-e", "--eventlog",
@@ -578,6 +598,11 @@ def mitmproxy():
         "-i", "--intercept", action="store",
         type=str, dest="intercept", default=None,
         help="Intercept filter expression."
+    )
+    group.add_argument(
+        "-l", "--limit", action="store",
+        type=str, dest="limit", default=None,
+        help="Limit filter expression."
     )
     return parser
 
@@ -654,4 +679,3 @@ def mitmweb():
         help="Intercept filter expression."
     )
     return parser
-

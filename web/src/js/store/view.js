@@ -1,16 +1,19 @@
+var EventEmitter = require('events').EventEmitter;
+var _ = require("lodash");
+
+var utils = require("../utils.js");
+
 function SortByStoreOrder(elem) {
     return this.store.index(elem.id);
 }
 
 var default_sort = SortByStoreOrder;
-var default_filt = function(elem){
+var default_filt = function (elem) {
     return true;
 };
 
 function StoreView(store, filt, sortfun) {
     EventEmitter.call(this);
-    filt = filt || default_filt;
-    sortfun = sortfun || default_sort;
 
     this.store = store;
 
@@ -32,19 +35,28 @@ _.extend(StoreView.prototype, EventEmitter.prototype, {
         this.store.removeListener("update", this.update);
         this.store.removeListener("remove", this.remove);
         this.store.removeListener("recalculate", this.recalculate);
-        },
-        recalculate: function (filt, sortfun) {
-        if (filt) {
-            this.filt = filt.bind(this);
-        }
-        if (sortfun) {
-            this.sortfun = sortfun.bind(this);
-        }
+        this.removeAllListeners();
+    },
+    recalculate: function (filt, sortfun) {
+        filt = filt || this.filt || default_filt;
+        sortfun = sortfun || this.sortfun || default_sort;
+        filt = filt.bind(this);
+        sortfun = sortfun.bind(this);
+        this.filt = filt;
+        this.sortfun = sortfun;
 
-        this.list = this.store.list.filter(this.filt);
+        this.list = this.store.list.filter(filt);
         this.list.sort(function (a, b) {
-            return this.sortfun(a) - this.sortfun(b);
-        }.bind(this));
+            var akey = sortfun(a);
+            var bkey = sortfun(b);
+            if(akey < bkey){
+                return -1;
+            } else if(akey > bkey){
+                return 1;
+            } else {
+                return 0;
+            }
+        });
         this.emit("recalculate");
     },
     index: function (elem) {
@@ -97,3 +109,7 @@ _.extend(StoreView.prototype, EventEmitter.prototype, {
         }
     }
 });
+
+module.exports = {
+    StoreView: StoreView
+};

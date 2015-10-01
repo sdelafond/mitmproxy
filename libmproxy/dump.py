@@ -1,4 +1,5 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
+import json
 import sys
 import os
 import netlib.utils
@@ -40,6 +41,7 @@ class Options(object):
         "replay_ignore_content",
         "replay_ignore_params",
         "replay_ignore_payload_params",
+        "replay_ignore_host"
     ]
 
     def __init__(self, **kwargs):
@@ -51,7 +53,7 @@ class Options(object):
 
 
 def str_response(resp):
-    r = "%s %s"%(resp.code, resp.msg)
+    r = "%s %s" % (resp.code, resp.msg)
     if resp.is_replay:
         r = "[replay] " + r
     return r
@@ -62,7 +64,7 @@ def str_request(f, showhost):
         c = f.client_conn.address.host
     else:
         c = "[replay]"
-    r = "%s %s %s"%(c, f.request.method, f.request.pretty_url(showhost))
+    r = "%s %s %s" % (c, f.request.method, f.request.pretty_url(showhost))
     if f.request.stickycookie:
         r = "[stickycookie] " + r
     return r
@@ -78,6 +80,7 @@ class DumpMaster(flow.FlowMaster):
         self.showhost = options.showhost
         self.replay_ignore_params = options.replay_ignore_params
         self.replay_ignore_content = options.replay_ignore_content
+        self.replay_ignore_host = options.replay_ignore_host
         self.refresh_server_playback = options.refresh_server_playback
         self.replay_ignore_payload_params = options.replay_ignore_payload_params
 
@@ -99,7 +102,7 @@ class DumpMaster(flow.FlowMaster):
             try:
                 f = file(path, options.outfile[1])
                 self.start_stream(f, self.filt)
-            except IOError, v:
+            except IOError as v:
                 raise DumpError(v.strerror)
 
         if options.replacements:
@@ -119,6 +122,7 @@ class DumpMaster(flow.FlowMaster):
                 options.replay_ignore_params,
                 options.replay_ignore_content,
                 options.replay_ignore_payload_params,
+                options.replay_ignore_host
             )
 
         if options.client_replay:
@@ -134,91 +138,94 @@ class DumpMaster(flow.FlowMaster):
                 raise DumpError(err)
 
         if options.rfile:
-            path = os.path.expanduser(options.rfile)
             try:
-                f = file(path, "rb")
-                freader = flow.FlowReader(f)
-            except IOError, v:
-                raise DumpError(v.strerror)
-            try:
-                self.load_flows(freader)
-            except flow.FlowReadError, v:
-                self.add_event("Flow file corrupted. Stopped loading.", "error")
+                self.load_flows_file(options.rfile)
+            except flow.FlowReadError as v:
+                self.add_event("Flow file corrupted.", "error")
+                raise DumpError(v)
 
         if self.o.app:
             self.start_app(self.o.app_host, self.o.app_port)
 
-    def _readflow(self, path):
-        path = os.path.expanduser(path)
+    def _readflow(self, paths):
+        """
+        Utitility function that reads a list of flows
+        or raises a DumpError if that fails.
+        """
         try:
-            f = file(path, "rb")
-            flows = list(flow.FlowReader(f).stream())
-        except (IOError, flow.FlowReadError), v:
-            raise DumpError(v.strerror)
-        return flows
+            return flow.read_flows_from_paths(paths)
+        except flow.FlowReadError as e:
+            raise DumpError(e.strerror)
 
     def add_event(self, e, level="info"):
         needed = dict(error=0, info=1, debug=2).get(level, 1)
         if self.o.verbosity >= needed:
-            print >> self.outfile, e
+            print(e, file=self.outfile)
             self.outfile.flush()
 
-    def indent(self, n, t):
-        l = str(t).strip().split("\n")
-        return "\n".join(" "*n + i for i in l)
+    @staticmethod
+    def indent(n, t):
+        l = str(t).strip().splitlines()
+        pad = " " * n
+        return "\n".join(pad + i for i in l)
+
+    def _print_message(self, message):
+        if self.o.flow_detail >= 2:
+            print(self.indent(4, message.headers.format()), file=self.outfile)
+        if self.o.flow_detail >= 3:
+            if message.content == http.CONTENT_MISSING:
+                print(self.indent(4, "(content missing)"), file=self.outfile)
+            elif message.content:
+                print("", file=self.outfile)
+                content = message.get_decoded_content()
+                if not utils.isBin(content):
+                    try:
+                        jsn = json.loads(content)
+                        print(
+                            self.indent(
+                                4,
+                                json.dumps(
+                                    jsn,
+                                    indent=2)),
+                            file=self.outfile)
+                    except ValueError:
+                        print(self.indent(4, content), file=self.outfile)
+                else:
+                    d = netlib.utils.hexdump(content)
+                    d = "\n".join("%s\t%s %s" % i for i in d)
+                    print(self.indent(4, d), file=self.outfile)
+        if self.o.flow_detail >= 2:
+            print("", file=self.outfile)
 
     def _process_flow(self, f):
         self.state.delete_flow(f)
         if self.filt and not f.match(self.filt):
             return
 
-        if f.response:
-            if self.o.flow_detail > 0:
-                if f.response.content == http.CONTENT_MISSING:
-                    sz = "(content missing)"
-                else:
-                    sz = utils.pretty_size(len(f.response.content))
-                result = " << %s %s"%(str_response(f.response), sz)
-            if self.o.flow_detail > 1:
-                result = result + "\n\n" + self.indent(4, f.response.headers)
-            if self.o.flow_detail > 2:
-                if f.response.content == http.CONTENT_MISSING:
-                    cont = self.indent(4, "(content missing)")
-                elif utils.isBin(f.response.content):
-                    d = netlib.utils.hexdump(f.response.content)
-                    d = "\n".join("%s\t%s %s"%i for i in d)
-                    cont = self.indent(4, d)
-                elif f.response.content:
-                    cont = self.indent(4, f.response.content)
-                else:
-                    cont = ""
-                result = result + "\n\n" + cont
-        elif f.error:
-            result = " << %s"%f.error.msg
+        if self.o.flow_detail == 0:
+            return
 
-        if self.o.flow_detail == 1:
-            print >> self.outfile, str_request(f, self.showhost)
-            print >> self.outfile, result
-        elif self.o.flow_detail == 2:
-            print >> self.outfile, str_request(f, self.showhost)
-            print >> self.outfile, self.indent(4, f.request.headers)
-            print >> self.outfile
-            print >> self.outfile, result
-            print >> self.outfile, "\n"
-        elif self.o.flow_detail >= 3:
-            print >> self.outfile, str_request(f, self.showhost)
-            print >> self.outfile, self.indent(4, f.request.headers)
-            if f.request.content != http.CONTENT_MISSING and utils.isBin(f.request.content):
-                d = netlib.utils.hexdump(f.request.content)
-                d = "\n".join("%s\t%s %s"%i for i in d)
-                print >> self.outfile, self.indent(4, d)
-            elif f.request.content:
-                print >> self.outfile, self.indent(4, f.request.content)
-            print >> self.outfile
-            print >> self.outfile, result
-            print >> self.outfile, "\n"
-        if self.o.flow_detail:
-            self.outfile.flush()
+        if f.request:
+            print(str_request(f, self.showhost), file=self.outfile)
+            self._print_message(f.request)
+
+        if f.response:
+            if f.response.content == http.CONTENT_MISSING:
+                sz = "(content missing)"
+            else:
+                sz = netlib.utils.pretty_size(len(f.response.content))
+            print(
+                " << %s %s" %
+                (str_response(
+                    f.response),
+                    sz),
+                file=self.outfile)
+            self._print_message(f.response)
+
+        if f.error:
+            print(" << {}".format(f.error.msg), file=self.outfile)
+
+        self.outfile.flush()
 
     def handle_request(self, f):
         flow.FlowMaster.handle_request(self, f)

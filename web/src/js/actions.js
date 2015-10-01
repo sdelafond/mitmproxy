@@ -1,3 +1,7 @@
+var $ = require("jquery");
+var _ = require("lodash");
+var AppDispatcher = require("./dispatcher.js").AppDispatcher;
+
 var ActionTypes = {
     // Connection
     CONNECTION_OPEN: "connection_open",
@@ -38,10 +42,11 @@ var ConnectionActions = {
 var SettingsActions = {
     update: function (settings) {
 
-        jQuery.ajax({
+        $.ajax({
             type: "PUT",
             url: "/settings",
-            data: settings
+            contentType: 'application/json',
+            data: JSON.stringify(settings)
         });
 
         /*
@@ -72,40 +77,61 @@ var EventLogActions = {
 
 var FlowActions = {
     accept: function (flow) {
-        jQuery.post("/flows/" + flow.id + "/accept");
+        $.post("/flows/" + flow.id + "/accept");
     },
     accept_all: function(){
-        jQuery.post("/flows/accept");
+        $.post("/flows/accept");
     },
     "delete": function(flow){
-        jQuery.ajax({
+        $.ajax({
             type:"DELETE",
             url: "/flows/" + flow.id
         });
     },
     duplicate: function(flow){
-        jQuery.post("/flows/" + flow.id + "/duplicate");
+        $.post("/flows/" + flow.id + "/duplicate");
     },
     replay: function(flow){
-        jQuery.post("/flows/" + flow.id + "/replay");
+        $.post("/flows/" + flow.id + "/replay");
     },
     revert: function(flow){
-        jQuery.post("/flows/" + flow.id + "/revert");
+        $.post("/flows/" + flow.id + "/revert");
     },
-    update: function (flow) {
+    update: function (flow, nextProps) {
+        /*
+        //Facebook Flux: We do an optimistic update on the client already.
+        var nextFlow = _.cloneDeep(flow);
+        _.merge(nextFlow, nextProps);
         AppDispatcher.dispatchViewAction({
             type: ActionTypes.FLOW_STORE,
             cmd: StoreCmds.UPDATE,
-            data: flow
+            data: nextFlow
+        });
+        */
+        $.ajax({
+            type: "PUT",
+            url: "/flows/" + flow.id,
+            contentType: 'application/json',
+            data: JSON.stringify(nextProps)
         });
     },
     clear: function(){
-        jQuery.post("/clear");
+        $.post("/clear");
     }
 };
 
-Query = {
-    FILTER: "f",
+var Query = {
+    SEARCH: "s",
     HIGHLIGHT: "h",
     SHOW_EVENTLOG: "e"
+};
+
+module.exports = {
+    ActionTypes: ActionTypes,
+    ConnectionActions: ConnectionActions,
+    FlowActions: FlowActions,
+    StoreCmds: StoreCmds,
+    SettingsActions: SettingsActions,
+    EventLogActions: EventLogActions,
+    Query: Query
 };

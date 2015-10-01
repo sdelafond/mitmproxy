@@ -1,14 +1,12 @@
 # -*- mode: python -*-
 
 from glob import glob
-block_cipher = None
 
 a = Analysis(['./mitmweb'],
              hiddenimports=[],
              hookspath=None,
              runtime_hooks=None,
              excludes=None,
-             cipher=block_cipher,
           )
 a.datas = Tree(
   "./libmproxy/onboarding/templates",
@@ -26,8 +24,11 @@ a.datas += Tree(
   "./libmproxy/web/static",
   prefix="libmproxy/web/static"
 )
-pyz = PYZ(a.pure,
-             cipher=block_cipher)
+a.datas += Tree(
+    "../venv.mitmproxy/lib/python2.7/site-packages/cryptography/hazmat/bindings/openssl/src",
+    prefix = "cryptography/hazmat/bindings/openssl/src"
+)
+pyz = PYZ(a.pure)
 exe = EXE(pyz,
           a.scripts,
           a.binaries,

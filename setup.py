@@ -11,30 +11,35 @@ here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'README.txt'), encoding='utf-8') as f:
     long_description = f.read()
 
-scripts = ["mitmdump"]
+scripts = ["mitmdump", "mitmweb"]
 if os.name != "nt":
     scripts.append("mitmproxy")
 
 deps = {
     "netlib>=%s, <%s" % (version.MINORVERSION, version.NEXT_MINORVERSION),
     "pyasn1>0.1.2",
-    "pyOpenSSL>=0.14",
     "tornado>=4.0.2",
-    "configargparse>=0.9.3"
+    "configargparse>=0.9.3",
+    "pyperclip>=1.5.8",
+    "blinker>=1.3"
 }
 script_deps = {
     "mitmproxy": {
-        "urwid>=1.1",
+        "urwid>=1.3",
         "lxml>=3.3.6",
         "Pillow>=2.3.0",
     },
-    "mitmdump": set()
+    "mitmdump": set(),
+    "mitmweb": set()
 }
 for script in scripts:
     deps.update(script_deps[script])
 if os.name == "nt":
-    deps.add("pydivert>=0.0.4")  # Transparent proxying on Windows
+    deps.add("pydivert>=0.0.7")  # Transparent proxying on Windows
 
+console_scripts = [
+    "%s = libmproxy.main:%s" % (s, s) for s in scripts
+]
 
 setup(
     name="mitmproxy",
@@ -55,15 +60,17 @@ setup(
         "Programming Language :: Python",
         "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: Implementation :: CPython",
+        "Programming Language :: Python :: Implementation :: PyPy",
         "Topic :: Security",
         "Topic :: Internet",
         "Topic :: Internet :: WWW/HTTP",
         "Topic :: Internet :: Proxy Servers",
-        "Topic :: Software Development :: Testing"
-    ],
+        "Topic :: Software Development :: Testing"],
     packages=find_packages(),
     include_package_data=True,
-    scripts = scripts,
+    entry_points={
+        'console_scripts': console_scripts},
     install_requires=list(deps),
     extras_require={
         'dev': [
@@ -71,19 +78,15 @@ setup(
             "nose>=1.3.0",
             "nose-cov>=1.6",
             "coveralls>=0.4.1",
-            "pathod>=%s, <%s" % (
-                version.MINORVERSION, version.NEXT_MINORVERSION
-            )
-        ],
+            "pathod>=%s, <%s" %
+            (version.MINORVERSION,
+             version.NEXT_MINORVERSION),
+            "countershape"],
         'contentviews': [
             "pyamf>=0.6.1",
             "protobuf>=2.5.0",
-            "cssutils>=1.0"
-        ],
+            "cssutils>=1.0"],
         'examples': [
             "pytz",
             "harparser",
-            "beautifulsoup4"
-        ]
-    }
-)
+            "beautifulsoup4"]})
