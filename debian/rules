@@ -1,9 +1,6 @@
 #!/usr/bin/make -f
 
-DEB_PYTHON2_MODULE_PACKAGES = mitmproxy
+export PYBUILD_NAME=mitmproxy
 
-include /usr/share/cdbs/1/rules/debhelper.mk
-include /usr/share/cdbs/1/class/python-distutils.mk
-
-STAGING_DIR               := $(CURDIR)/debian/mitmproxy
-DEB_INSTALL_DOCS_ALL      := CONTRIBUTORS examples/
+%:
+	dh $@ --with python2 --buildsystem=pybuild
