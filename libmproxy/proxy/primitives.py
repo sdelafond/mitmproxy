@@ -1,5 +1,5 @@
 from __future__ import absolute_import
-from netlib import socks
+from netlib import socks, tcp
 
 
 class ProxyError(Exception):
@@ -51,6 +51,33 @@ class RegularProxyMode(ProxyMode):
         return None
 
 
+class SpoofMode(ProxyMode):
+    http_form_in = "relative"
+    http_form_out = "relative"
+
+    def get_upstream_server(self, client_conn):
+        return None
+
+    @property
+    def name(self):
+        return "spoof"
+
+
+class SSLSpoofMode(ProxyMode):
+    http_form_in = "relative"
+    http_form_out = "relative"
+
+    def __init__(self, sslport):
+        self.sslport = sslport
+
+    def get_upstream_server(self, client_conn):
+        return None
+
+    @property
+    def name(self):
+        return "sslspoof"
+
+
 class TransparentProxyMode(ProxyMode):
     http_form_in = "relative"
     http_form_out = "relative"
@@ -79,24 +106,11 @@ class Socks5ProxyMode(ProxyMode):
     def __init__(self, sslports):
         self.sslports = sslports
 
-    @staticmethod
-    def _assert_socks5(msg):
-        if msg.ver != socks.VERSION.SOCKS5:
-            if msg.ver == ord("G") and len(msg.methods) == ord("E"):
-                guess = "Probably not a SOCKS request but a regular HTTP request. "
-            else:
-                guess = ""
-            raise socks.SocksError(
-                socks.REP.GENERAL_SOCKS_SERVER_FAILURE,
-                guess +
-                "Invalid SOCKS version. Expected 0x05, got 0x%x" %
-                msg.ver)
-
     def get_upstream_server(self, client_conn):
         try:
             # Parse Client Greeting
-            client_greet = socks.ClientGreeting.from_file(client_conn.rfile)
-            self._assert_socks5(client_greet)
+            client_greet = socks.ClientGreeting.from_file(client_conn.rfile, fail_early=True)
+            client_greet.assert_socks5()
             if socks.METHOD.NO_AUTHENTICATION_REQUIRED not in client_greet.methods:
                 raise socks.SocksError(
                     socks.METHOD.NO_ACCEPTABLE_METHODS,
@@ -113,7 +127,7 @@ class Socks5ProxyMode(ProxyMode):
 
             # Parse Connect Request
             connect_request = socks.Message.from_file(client_conn.rfile)
-            self._assert_socks5(connect_request)
+            connect_request.assert_socks5()
             if connect_request.msg != socks.CMD.CONNECT:
                 raise socks.SocksError(
                     socks.REP.COMMAND_NOT_SUPPORTED,
@@ -126,9 +140,9 @@ class Socks5ProxyMode(ProxyMode):
             connect_reply = socks.Message(
                 socks.VERSION.SOCKS5,
                 socks.REP.SUCCEEDED,
-                socks.ATYP.DOMAINNAME,
+                connect_request.atyp,
                 # dummy value, we don't have an upstream connection yet.
-                client_conn.address
+                connect_request.addr
             )
             connect_reply.to_file(client_conn.wfile)
             client_conn.wfile.flush()
@@ -136,12 +150,7 @@ class Socks5ProxyMode(ProxyMode):
             ssl = bool(connect_request.addr.port in self.sslports)
             return ssl, ssl, connect_request.addr.host, connect_request.addr.port
 
-        except socks.SocksError as e:
-            msg = socks.Message(5, e.code, socks.ATYP.DOMAINNAME, repr(e))
-            try:
-                msg.to_file(client_conn.wfile)
-            except:
-                pass
+        except (socks.SocksError, tcp.NetLibError) as e:
             raise ProxyError(502, "SOCKS5 mode failure: %s" % str(e))
 
 

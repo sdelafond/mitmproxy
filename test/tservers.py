@@ -89,7 +89,6 @@ class ProxTestBase(object):
     no_upstream_cert = False
     authenticator = None
     masterclass = TestMaster
-    certforward = False
 
     @classmethod
     def setupAll(cls):
@@ -131,7 +130,6 @@ class ProxTestBase(object):
             no_upstream_cert = cls.no_upstream_cert,
             cadir = cls.cadir,
             authenticator = cls.authenticator,
-            certforward = cls.certforward,
             ssl_ports=([cls.server.port, cls.server2.port] if cls.ssl else []),
             clientcerts = tutils.test_data.path("data/clientcert") if cls.clientcerts else None
         )
@@ -268,6 +266,56 @@ class ReverseProxTest(ProxTestBase):
             p = self.pathoc()
             q = "get:'/p/%s'" % spec
         return p.request(q)
+
+
+class SocksModeTest(HTTPProxTest):
+    @classmethod
+    def get_proxy_config(cls):
+        d = ProxTestBase.get_proxy_config()
+        d["mode"] = "socks5"
+        return d
+
+class SpoofModeTest(ProxTestBase):
+    ssl = None
+
+    @classmethod
+    def get_proxy_config(cls):
+        d = ProxTestBase.get_proxy_config()
+        d["upstream_server"] = None
+        d["mode"] = "spoof"
+        return d
+
+    def pathoc(self, sni=None):
+        """
+            Returns a connected Pathoc instance.
+        """
+        p = libpathod.pathoc.Pathoc(
+            ("localhost", self.proxy.port), ssl=self.ssl, sni=sni, fp=None
+        )
+        p.connect()
+        return p
+
+
+class SSLSpoofModeTest(ProxTestBase):
+    ssl = True
+
+    @classmethod
+    def get_proxy_config(cls):
+        d = ProxTestBase.get_proxy_config()
+        d["upstream_server"] = None
+        d["mode"] = "sslspoof"
+        d["spoofed_ssl_port"] = 443
+        return d
+
+    def pathoc(self, sni=None):
+        """
+            Returns a connected Pathoc instance.
+        """
+        p = libpathod.pathoc.Pathoc(
+            ("localhost", self.proxy.port), ssl=self.ssl, sni=sni, fp=None
+        )
+        p.connect()
+        return p
 
 
 class ChainProxTest(ProxTestBase):
