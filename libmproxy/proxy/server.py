@@ -117,6 +117,16 @@ class ConnectionHandler:
                         self.server_conn.address(),
                         "info")
                     self.conntype = "tcp"
+                
+            elif not self.server_conn and self.config.mode == "sslspoof":
+                port = self.config.mode.sslport
+                self.set_server_address(("-", port))
+                self.establish_ssl(client=True)
+                host = self.client_conn.connection.get_servername()
+                if host:
+                    self.set_server_address((host, port))
+                    self.establish_server_connection()
+                    self.establish_ssl(server=True, sni=host)
 
             # Delegate handling to the protocol handler
             protocol_handler(
@@ -225,8 +235,18 @@ class ConnectionHandler:
                     sni,
                     method=self.config.openssl_method_server,
                     options=self.config.openssl_options_server,
+                    verify_options=self.config.openssl_verification_mode_server,
+                    ca_path=self.config.openssl_trusted_cadir_server,
+                    ca_pemfile=self.config.openssl_trusted_ca_server,
                     cipher_list=self.config.ciphers_server,
                 )
+                ssl_cert_err = self.server_conn.ssl_verification_error
+                if ssl_cert_err is not None:
+                    self.log(
+                        "SSL verification failed for upstream server at depth %s with error: %s" % 
+                            (ssl_cert_err['depth'], ssl_cert_err['errno']),
+                        "error")
+                    self.log("Ignoring server verification error, continuing with connection", "error")
             except tcp.NetLibError as v:
                 e = ProxyError(502, repr(v))
                 # Workaround for https://github.com/mitmproxy/mitmproxy/issues/427
@@ -236,6 +256,13 @@ class ConnectionHandler:
                 if client and "handshake failure" in e.message:
                     self.server_conn.may_require_sni = e
                 else:
+                    ssl_cert_err = self.server_conn.ssl_verification_error
+                    if ssl_cert_err is not None:
+                        self.log(
+                            "SSL verification failed for upstream server at depth %s with error: %s" % 
+                                (ssl_cert_err['depth'], ssl_cert_err['errno']),
+                            "error")
+                        self.log("Aborting connection attempt", "error")
                     raise e
         if client:
             if self.client_conn.ssl_established:
@@ -293,26 +320,25 @@ class ConnectionHandler:
         self.channel.tell("log", Log(msg, level))
 
     def find_cert(self):
-        if self.config.certforward and self.server_conn.ssl_established:
-            return self.server_conn.cert, self.config.certstore.gen_pkey(
-                self.server_conn.cert), None
-        else:
-            host = self.server_conn.address.host
-            sans = []
-            if self.server_conn.ssl_established and (
-                    not self.config.no_upstream_cert):
-                upstream_cert = self.server_conn.cert
-                sans.extend(upstream_cert.altnames)
-                if upstream_cert.cn:
-                    sans.append(host)
-                    host = upstream_cert.cn.decode("utf8").encode("idna")
-            if self.server_conn.sni:
-                sans.append(self.server_conn.sni)
+        host = self.server_conn.address.host
+        sans = []
+        if self.server_conn.ssl_established and (
+                not self.config.no_upstream_cert):
+            upstream_cert = self.server_conn.cert
+            sans.extend(upstream_cert.altnames)
+            if upstream_cert.cn:
+                sans.append(host)
+                host = upstream_cert.cn.decode("utf8").encode("idna")
+        if self.server_conn.sni:
+            sans.append(self.server_conn.sni)
+        # for ssl spoof mode
+        if hasattr(self.client_conn, "sni"):
+            sans.append(self.client_conn.sni)
 
-            ret = self.config.certstore.get_cert(host, sans)
-            if not ret:
-                raise ProxyError(502, "Unable to generate dummy cert.")
-            return ret
+        ret = self.config.certstore.get_cert(host, sans)
+        if not ret:
+            raise ProxyError(502, "Unable to generate dummy cert.")
+        return ret
 
     def handle_sni(self, connection):
         """
@@ -325,6 +351,8 @@ class ConnectionHandler:
             if not sn:
                 return
             sni = sn.decode("utf8").encode("idna")
+            # for ssl spoof mode
+            self.client_conn.sni = sni
 
             if sni != self.server_conn.sni:
                 self.log("SNI received: %s" % sni, "debug")

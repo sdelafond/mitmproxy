@@ -584,11 +584,10 @@ class HTTPRequest(HTTPMessage):
             of the request, e.g. if an upstream proxy is in place
 
             If hostheader is set to True, the Host: header will be used as
-            additional (and preferred) data source. This is handy in transparent
-            mode, where only the ip of the destination is known, but not the
-            resolved name. This is disabled by default, as an attacker may spoof
-            the host header to confuse an analyst.
-
+            additional (and preferred) data source. This is handy in
+            transparent mode, where only the IO of the destination is known,
+            but not the resolved name. This is disabled by default, as an
+            attacker may spoof the host header to confuse an analyst.
         """
         host = None
         if hostheader:
@@ -596,7 +595,10 @@ class HTTPRequest(HTTPMessage):
         if not host:
             host = self.host
         if host:
-            return host.encode("idna")
+            try:
+                return host.encode("idna")
+            except ValueError:
+                return host
         else:
             return None
 
@@ -1312,9 +1314,7 @@ class HTTPHandler(ProtocolHandler):
                 pass
 
         elif request.form_in == self.expected_form_in:
-
             request.form_out = self.expected_form_out
-
             if request.form_in == "absolute":
                 if request.scheme != "http":
                     raise http.HttpError(
@@ -1327,7 +1327,32 @@ class HTTPHandler(ProtocolHandler):
                     self.c.set_server_address((request.host, request.port))
                     flow.server_conn = self.c.server_conn
 
+            elif request.form_in == "relative":
+                if self.c.config.mode == "spoof":
+                    # Host header
+                    h = request.pretty_host(hostheader=True)
+                    if h is None:
+                        raise http.HttpError(
+                            400,
+                            "Invalid request: No host information"
+                        )
+                    p = http.parse_url("http://" + h)
+                    request.scheme = p[0]
+                    request.host = p[1]
+                    request.port = p[2]
+                    self.c.set_server_address((request.host, request.port))
+                    flow.server_conn = self.c.server_conn
+
+                if self.c.config.mode == "sslspoof":
+                    # SNI is processed in server.py
+                    if not (flow.server_conn and flow.server_conn.ssl_established):
+                        raise http.HttpError(
+                            400,
+                            "Invalid request: No host information"
+                        )
+
             return None
+
         raise http.HttpError(
             400, "Invalid HTTP request form (expected: %s, got: %s)" % (
                 self.expected_form_in, request.form_in
