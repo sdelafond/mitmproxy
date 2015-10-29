@@ -1,3 +1,9 @@
+mitmproxy (0.13-1) unstable; urgency=medium
+
+  * New upstream version (Closes: #800607)
+
+ -- Sebastien Delafond <seb@debian.org>  Thu, 29 Oct 2015 15:07:15 +0100
+
 mitmproxy (0.12.1-2) unstable; urgency=medium
 
   * Explicitly require python-netlib >= 0.12
