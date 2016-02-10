@@ -4,7 +4,6 @@ import urwid
 
 import netlib.utils
 from . import pathedit, signals, common
-from .. import utils
 
 
 class ActionBar(urwid.WidgetWrap):
@@ -25,6 +24,7 @@ class ActionBar(urwid.WidgetWrap):
     def sig_message(self, sender, message, expire=None):
         w = urwid.Text(message)
         self._w = w
+        self.prompting = False
         if expire:
             def cb(*args):
                 if w == self._w:
@@ -88,6 +88,7 @@ class ActionBar(urwid.WidgetWrap):
 
     def clear(self):
         self._w = urwid.Text("")
+        self.prompting = False
 
     def prompt_done(self):
         self.prompting = False
@@ -199,11 +200,12 @@ class StatusBar(urwid.WidgetWrap):
             r.append("[%s]" % (":".join(opts)))
 
         if self.master.server.config.mode in ["reverse", "upstream"]:
-            dst = self.master.server.config.mode.dst
-            scheme = "https" if dst[0] else "http"
-            if dst[1] != dst[0]:
-                scheme += "2https" if dst[1] else "http"
-            r.append("[dest:%s]" % utils.unparse_url(scheme, *dst[2:]))
+            dst = self.master.server.config.upstream_server
+            r.append("[dest:%s]" % netlib.utils.unparse_url(
+                dst.scheme,
+                dst.address.host,
+                dst.address.port
+            ))
         if self.master.scripts:
             r.append("[")
             r.append(("heading_key", "s"))

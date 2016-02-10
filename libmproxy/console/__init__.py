@@ -14,9 +14,9 @@ import traceback
 import urwid
 import weakref
 
-from .. import controller, flow, script
+from .. import controller, flow, script, contentviews
 from . import flowlist, flowview, help, window, signals, options
-from . import grideditor, palettes, contentview, statusbar, palettepicker
+from . import grideditor, palettes, statusbar, palettepicker
 
 EVENTLOG_SIZE = 500
 
@@ -26,7 +26,7 @@ class ConsoleState(flow.State):
         flow.State.__init__(self)
         self.focus = None
         self.follow_focus = None
-        self.default_body_view = contentview.get("Auto")
+        self.default_body_view = contentviews.get("Auto")
         self.flowsettings = weakref.WeakKeyDictionary()
         self.last_search = None
 
@@ -154,7 +154,8 @@ class Options(object):
         "wfile",
         "nopop",
         "palette",
-        "palette_transparent"
+        "palette_transparent",
+        "no_mouse"
     ]
 
     def __init__(self, **kwargs):
@@ -314,8 +315,8 @@ class ConsoleMaster(flow.FlowMaster):
         signals.add_event("Running script on flow: %s" % command, "debug")
 
         try:
-            s = script.Script(command, self)
-        except script.ScriptError as v:
+            s = script.Script(command, script.ScriptContext(self))
+        except script.ScriptException as v:
             signals.status_message.send(
                 message = "Error loading script."
             )
@@ -455,12 +456,12 @@ class ConsoleMaster(flow.FlowMaster):
 
     def run(self):
         self.ui = urwid.raw_display.Screen()
-        self.ui.set_mouse_tracking()
         self.ui.set_terminal_properties(256)
         self.set_palette(self.palette)
         self.loop = urwid.MainLoop(
             urwid.SolidFill("x"),
             screen = self.ui,
+            handle_mouse = not self.options.no_mouse,
         )
 
         self.server.start_slave(
@@ -647,7 +648,7 @@ class ConsoleMaster(flow.FlowMaster):
         return self.state.set_intercept(txt)
 
     def change_default_display_mode(self, t):
-        v = contentview.get_by_shortcut(t)
+        v = contentviews.get_by_shortcut(t)
         self.state.default_body_view = v
         self.refresh_focus()
 
@@ -730,3 +731,9 @@ class ConsoleMaster(flow.FlowMaster):
         if f:
             self.process_flow(f)
         return f
+
+    def handle_script_change(self, script):
+        if super(ConsoleMaster, self).handle_script_change(script):
+            signals.status_message.send(message='"{}" reloaded.'.format(script.filename))
+        else:
+            signals.status_message.send(message='Error reloading "{}".'.format(script.filename))

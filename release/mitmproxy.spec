@@ -1,26 +1,15 @@
 # -*- mode: python -*-
 
-from glob import glob
+from PyInstaller.utils.hooks import collect_data_files
 
-a = Analysis(['./mitmproxy'],
+a = Analysis(['../mitmproxy'],
+             binaries=None,
+             datas=collect_data_files("libmproxy.onboarding"),
              hiddenimports=[],
              hookspath=None,
              runtime_hooks=None,
-             excludes=None,
-          )
-a.datas = Tree(
-  "./libmproxy/onboarding/templates",
-  prefix="libmproxy/onboarding/templates"
-)
-a.datas += Tree(
-  "./libmproxy/onboarding/static",
-  prefix="libmproxy/onboarding/static"
-)
-a.datas += Tree(
-    "../venv.mitmproxy/lib/python2.7/site-packages/cryptography/hazmat/bindings/openssl/src",
-    prefix = "cryptography/hazmat/bindings/openssl/src"
-)
-pyz = PYZ(a.pure)
+             excludes=None)
+pyz = PYZ(a.pure, a.zipped_data)
 exe = EXE(pyz,
           a.scripts,
           a.binaries,

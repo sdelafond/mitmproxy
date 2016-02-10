@@ -1,3 +1,85 @@
+6 November 2015: mitmproxy 0.14
+
+    * Statistics: 399 commits, 13 contributors, 79 closed issues, 37 closed
+      PRs, 103 days
+
+    * Docs: Greatly updated docs now hosted on ReadTheDocs!
+      http://docs.mitmproxy.org
+
+    * Docs: Fixed Typos, updated URLs etc. (Nick Badger, Ben Lerner, Choongwoo
+      Han, onlywade, Jurriaan Bremer)
+
+    * mitmdump: Colorized TTY output
+
+    * mitmdump: Use mitmproxy's content views for human-readable output (Chris
+      Czub)
+
+    * mitmproxy and mitmdump: Support for displaying UTF8 contents
+
+    * mitmproxy: add command line switch to disable mouse interaction (Timothy
+      Elliott)
+
+    * mitmproxy: bug fixes (Choongwoo Han, sethp-jive, FreeArtMan)
+
+    * mitmweb: bug fixes (Colin Bendell)
+
+    * libmproxy: Add ability to fall back to TCP passthrough for non-HTTP
+      connections.
+
+    * libmproxy: Avoid double-connect in case of TLS Server Name Indication.
+      This yields a massive speedup for TLS handshakes.
+
+    * libmproxy: Prevent unneccessary upstream connections (macmantrl)
+
+    * Inline Scripts: New API for HTTP Headers:
+      http://docs.mitmproxy.org/en/latest/dev/models.html#netlib.http.Headers
+
+    * Inline Scripts: Properly handle exceptions in `done` hook
+
+    * Inline Scripts: Allow relative imports, provide `__file__`
+
+    * Examples: Add probabilistic TLS passthrough as an inline script
+
+    * netlib: Refactored HTTP protocol handling code
+
+    * netlib: ALPN support
+
+    * netlib: fixed a bug in the optional certificate verification.
+
+    * netlib: Initial Python 3.5 support (this is the first prerequisite for
+      3.x support in mitmproxy)
+
+
+24 July 2015: mitmproxy 0.13
+
+    * Upstream certificate validation. See the --verify-upstream-cert,
+      --upstream-trusted-cadir and --upstream-trusted-ca parameters. Thanks to
+      Kyle Morton (github.com/kyle-m) for his work on this.
+
+    * Add HTTP transparent proxy mode. This uses the host headers from HTTP
+      traffic (rather than SNI and IP address information from the OS) to
+      implement perform transparent proxying. Thanks to github.com/ijiro123 for
+      this feature.
+
+    * Add ~src and ~dst REGEX filters, allowing matching on source and
+      destination addresses in the form of <IP>:<Port>
+
+    * mitmproxy console: change g/G keyboard shortcuts to match less. Thanks to
+      Jose Luis Honorato (github.com/jlhonora).
+
+    * mitmproxy console: Flow marking and unmarking. Marked flows are not
+      deleted when the flow list is cleared. Thanks to Jake Drahos
+      (github.com/drahosj).
+
+    * mitmproxy console: add marking of flows
+
+    * Remove the certforward feature. It was added to allow exploitation of
+      #gotofail, which is no longer a common vulnerability. Permitting this
+      hugely increased the complexity of packaging and distributing mitmproxy.
+
+
+
+
 3 June 2015: mitmproxy 0.12.1
 
     * mitmproxy console: mouse interaction - scroll in the flow list, click on
