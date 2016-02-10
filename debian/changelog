@@ -1,3 +1,9 @@
+mitmproxy (0.15-1) unstable; urgency=medium
+
+  * New upstream version 0.15
+  
+ -- Sebastien Delafond <seb@debian.org>  Wed, 10 Feb 2016 15:13:45 +0100
+
 mitmproxy (0.13-1) unstable; urgency=medium
 
   * New upstream version (Closes: #800607)
