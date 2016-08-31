@@ -1,15 +1,15 @@
-var React = require("react");
-var ReactRouter = require("react-router");
-var _ = require("lodash");
+import React from "react";
+import ReactDOM from "react-dom";
+import _ from "lodash";
 
-var common = require("./common.js");
-var MainView = require("./mainview.js");
-var Footer = require("./footer.js");
-var header = require("./header.js");
-var EventLog = require("./eventlog.js");
-var store = require("../store/store.js");
-var Query = require("../actions.js").Query;
-var Key = require("../utils.js").Key;
+import {Router, Splitter} from "./common.js"
+import MainView from "./mainview.js";
+import Footer from "./footer.js";
+import {Header, MainMenu} from "./header.js";
+import EventLog from "./eventlog.js"
+import {EventLogStore, FlowStore, SettingsStore} from "../store/store.js";
+import {Query} from "../actions.js";
+import {Key} from "../utils.js";
 
 
 //TODO: Move out of here, just a stub.
@@ -21,48 +21,58 @@ var Reports = React.createClass({
 
 
 var ProxyAppMain = React.createClass({
-    mixins: [common.RouterState],
+    mixins: [Router],
     childContextTypes: {
-        settingsStore: React.PropTypes.object.isRequired,
         flowStore: React.PropTypes.object.isRequired,
         eventStore: React.PropTypes.object.isRequired,
         returnFocus: React.PropTypes.func.isRequired,
+        location: React.PropTypes.object.isRequired,
     },
     componentDidMount: function () {
         this.focus();
+        this.settingsStore.addListener("recalculate", this.onSettingsChange);
+    },
+    componentWillUnmount: function () {
+        this.settingsStore.removeListener("recalculate", this.onSettingsChange);
+    },
+    onSettingsChange: function () {
+        this.setState({ settings: this.settingsStore.dict });
     },
     getChildContext: function () {
         return {
-            settingsStore: this.state.settingsStore,
             flowStore: this.state.flowStore,
             eventStore: this.state.eventStore,
             returnFocus: this.focus,
+            location: this.props.location
         };
     },
     getInitialState: function () {
-        var eventStore = new store.EventLogStore();
-        var flowStore = new store.FlowStore();
-        var settingsStore = new store.SettingsStore();
+        var eventStore = new EventLogStore();
+        var flowStore = new FlowStore();
+        var settingsStore = new SettingsStore();
 
+        this.settingsStore = settingsStore;
         // Default Settings before fetch
         _.extend(settingsStore.dict, {});
         return {
-            settingsStore: settingsStore,
+            settings: settingsStore.dict,
             flowStore: flowStore,
             eventStore: eventStore
         };
     },
     focus: function () {
-        React.findDOMNode(this).focus();
+        document.activeElement.blur();
+        window.getSelection().removeAllRanges();
+        ReactDOM.findDOMNode(this).focus();
     },
     getMainComponent: function () {
-        return this.refs.view.refs.__routeHandler__;
+        return this.refs.view;
     },
     onKeydown: function (e) {
 
         var selectFilterInput = function (name) {
             var headerComponent = this.refs.header;
-            headerComponent.setState({active: header.MainMenu}, function () {
+            headerComponent.setState({active: MainMenu}, function () {
                 headerComponent.refs.active.refs[name].select();
             });
         }.bind(this);
@@ -88,42 +98,39 @@ var ProxyAppMain = React.createClass({
     },
     render: function () {
         var eventlog;
-        if (this.getQuery()[Query.SHOW_EVENTLOG]) {
+        if (this.props.location.query[Query.SHOW_EVENTLOG]) {
             eventlog = [
-                <common.Splitter key="splitter" axis="y"/>,
+                <Splitter key="splitter" axis="y"/>,
                 <EventLog key="eventlog"/>
             ];
         } else {
             eventlog = null;
         }
+        var children = React.cloneElement(
+            this.props.children,
+            { ref: "view", location: this.props.location }
+        );
         return (
             <div id="container" tabIndex="0" onKeyDown={this.onKeydown}>
-                <header.Header ref="header"/>
-                <RouteHandler ref="view" query={this.getQuery()}/>
+                <Header ref="header" settings={this.state.settings}/>
+                {children}
                 {eventlog}
-                <Footer/>
+                <Footer settings={this.state.settings}/>
             </div>
         );
     }
 });
 
 
-var Route = ReactRouter.Route;
-var RouteHandler = ReactRouter.RouteHandler;
-var Redirect = ReactRouter.Redirect;
-var DefaultRoute = ReactRouter.DefaultRoute;
-var NotFoundRoute = ReactRouter.NotFoundRoute;
+import { Route, Router as ReactRouter, hashHistory, Redirect} from "react-router";
 
-
-var routes = (
-    <Route path="/" handler={ProxyAppMain}>
-        <Route name="flows" path="flows" handler={MainView}/>
-        <Route name="flow" path="flows/:flowId/:detailTab" handler={MainView}/>
-        <Route name="reports" handler={Reports}/>
-        <Redirect path="/" to="flows" />
+export var app = (
+<ReactRouter history={hashHistory}>
+    <Redirect from="/" to="/flows" />
+    <Route path="/" component={ProxyAppMain}>
+        <Route path="flows" component={MainView}/>
+        <Route path="flows/:flowId/:detailTab" component={MainView}/>
+        <Route path="reports" component={Reports}/>
     </Route>
+</ReactRouter>
 );
-
-module.exports = {
-    routes: routes
-};

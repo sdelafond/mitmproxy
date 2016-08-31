@@ -1,7 +1,7 @@
 import string
 import lxml.html
 import lxml.etree
-from libmproxy import utils, contentviews
+from mitmproxy import utils, contentviews
 
 
 class ViewPigLatin(contentviews.View):
@@ -64,5 +64,5 @@ def start(context, argv):
     context.add_contentview(pig_view)
 
 
-def stop(context):
+def done(context):
     context.remove_contentview(pig_view)

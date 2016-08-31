@@ -1,109 +1,34 @@
-var React = require("react");
-var ReactRouter = require("react-router");
-var _ = require("lodash");
+import React from "react"
+import ReactDOM from "react-dom"
+import _ from "lodash"
 
-// http://blog.vjeux.com/2013/javascript/scroll-position-with-react.html (also contains inverse example)
-var AutoScrollMixin = {
-    componentWillUpdate: function () {
-        var node = this.getDOMNode();
-        this._shouldScrollBottom = (
-        node.scrollTop !== 0 &&
-        node.scrollTop + node.clientHeight === node.scrollHeight
-        );
+export var Router = {
+    contextTypes: {
+        location: React.PropTypes.object,
+        router: React.PropTypes.object.isRequired
     },
-    componentDidUpdate: function () {
-        if (this._shouldScrollBottom) {
-            var node = this.getDOMNode();
-            node.scrollTop = node.scrollHeight;
+    updateLocation: function (pathname, queryUpdate) {
+        if (pathname === undefined) {
+            pathname = this.context.location.pathname;
         }
-    },
-};
-
-
-var StickyHeadMixin = {
-    adjustHead: function () {
-        // Abusing CSS transforms to set the element
-        // referenced as head into some kind of position:sticky.
-        var head = this.refs.head.getDOMNode();
-        head.style.transform = "translate(0," + this.getDOMNode().scrollTop + "px)";
-    }
-};
-
-var SettingsState = {
-    contextTypes: {
-        settingsStore: React.PropTypes.object.isRequired
-    },
-    getInitialState: function () {
-        return {
-            settings: this.context.settingsStore.dict
-        };
-    },
-    componentDidMount: function () {
-        this.context.settingsStore.addListener("recalculate", this.onSettingsChange);
-    },
-    componentWillUnmount: function () {
-        this.context.settingsStore.removeListener("recalculate", this.onSettingsChange);
-    },
-    onSettingsChange: function () {
-        this.setState({
-            settings: this.context.settingsStore.dict
-        });
-    },
-};
-
-
-var ChildFocus = {
-    contextTypes: {
-        returnFocus: React.PropTypes.func
-    },
-    returnFocus: function(){
-        React.findDOMNode(this).blur();
-        window.getSelection().removeAllRanges();
-        this.context.returnFocus();
-    }
-};
-
-
-var Navigation = _.extend({}, ReactRouter.Navigation, {
-    setQuery: function (dict) {
-        var q = this.context.router.getCurrentQuery();
-        for (var i in dict) {
-            if (dict.hasOwnProperty(i)) {
-                q[i] = dict[i] || undefined; //falsey values shall be removed.
+        var query = this.context.location.query;
+        if (queryUpdate !== undefined) {
+            for (var i in queryUpdate) {
+                if (queryUpdate.hasOwnProperty(i)) {
+                    query[i] = queryUpdate[i] || undefined; //falsey values shall be removed.
+                }
             }
         }
-        this.replaceWith(this.context.router.getCurrentPath(), this.context.router.getCurrentParams(), q);
+        this.context.router.replace({pathname, query});
     },
-    replaceWith: function (routeNameOrPath, params, query) {
-        if (routeNameOrPath === undefined) {
-            routeNameOrPath = this.context.router.getCurrentPath();
-        }
-        if (params === undefined) {
-            params = this.context.router.getCurrentParams();
-        }
-        if (query === undefined) {
-            query = this.context.router.getCurrentQuery();
-        }
-
-        this.context.router.replaceWith(routeNameOrPath, params, query);
-    }
-});
-
-// react-router is fairly good at changing its API regularly.
-// We keep the old method for now - if it should turn out that their changes are permanent,
-// we may remove this mixin and access react-router directly again.
-var RouterState = _.extend({}, ReactRouter.State, {
     getQuery: function () {
         // For whatever reason, react-router always returns the same object, which makes comparing
         // the current props with nextProps impossible. As a workaround, we just clone the query object.
-        return _.clone(this.context.router.getCurrentQuery());
-    },
-    getParams: function () {
-        return _.clone(this.context.router.getCurrentParams());
+        return _.clone(this.context.location.query);
     }
-});
+};
 
-var Splitter = React.createClass({
+export var Splitter = React.createClass({
     getDefaultProps: function () {
         return {
             axis: "x"
@@ -127,7 +52,7 @@ var Splitter = React.createClass({
         window.addEventListener("dragend", this.onDragEnd);
     },
     onDragEnd: function () {
-        this.getDOMNode().style.transform = "";
+        ReactDOM.findDOMNode(this).style.transform = "";
         window.removeEventListener("dragend", this.onDragEnd);
         window.removeEventListener("mouseup", this.onMouseUp);
         window.removeEventListener("mousemove", this.onMouseMove);
@@ -135,7 +60,7 @@ var Splitter = React.createClass({
     onMouseUp: function (e) {
         this.onDragEnd();
 
-        var node = this.getDOMNode();
+        var node = ReactDOM.findDOMNode(this);
         var prev = node.previousElementSibling;
         var next = node.nextElementSibling;
 
@@ -163,7 +88,7 @@ var Splitter = React.createClass({
         } else {
             dY = e.pageY - this.state.startY;
         }
-        this.getDOMNode().style.transform = "translate(" + dX + "px," + dY + "px)";
+        ReactDOM.findDOMNode(this).style.transform = "translate(" + dX + "px," + dY + "px)";
     },
     onResize: function () {
         // Trigger a global resize event. This notifies components that employ virtual scrolling
@@ -176,7 +101,7 @@ var Splitter = React.createClass({
         if (!this.state.applied) {
             return;
         }
-        var node = this.getDOMNode();
+        var node = ReactDOM.findDOMNode(this);
         var prev = node.previousElementSibling;
         var next = node.nextElementSibling;
 
@@ -207,13 +132,3 @@ var Splitter = React.createClass({
         );
     }
 });
-
-module.exports = {
-    ChildFocus: ChildFocus,
-    RouterState: RouterState,
-    Navigation: Navigation,
-    StickyHeadMixin: StickyHeadMixin,
-    AutoScrollMixin: AutoScrollMixin,
-    Splitter: Splitter,
-    SettingsState: SettingsState
-};

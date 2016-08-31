@@ -1,40 +1,34 @@
 sudo: false
 language: python
 
+addons:
+  apt:
+    sources:
+      # Debian sid currently holds OpenSSL 1.0.2
+      # change this with future releases!
+      - debian-sid
+    packages:
+      - libssl-dev
+
 matrix:
   fast_finish: true
   include:
     - python: 2.7
+    - python: 2.7
+      env: NO_ALPN=1
     - language: generic
       os: osx
       osx_image: xcode7.1
-    - python: 2.7
-      env: OPENSSL=1.0.2
-      addons:
-        apt:
-          sources:
-            # Debian sid currently holds OpenSSL 1.0.2
-            # change this with future releases!
-            - debian-sid
-          packages:
-            - libssl-dev
+      git:
+        depth: 9999999
+    - python: 3.5
+      env: SCOPE="netlib ./test/mitmproxy/script"
+    - python: 3.5
+      env: SCOPE="netlib ./test/mitmproxy/script" NO_ALPN=1
     - python: 2.7
       env: DOCS=1
       script: 'cd docs && make html'
-    - python: pypy
-    - python: pypy
-      env: OPENSSL=1.0.2
-      addons:
-        apt:
-          sources:
-            # Debian sid currently holds OpenSSL 1.0.2
-            # change this with future releases!
-            - debian-sid
-          packages:
-            - libssl-dev
   allow_failures:
-    # We allow pypy to fail until Travis fixes their infrastructure to a pypy
-    # with a recent enought CFFI library to run cryptography 1.0+.
     - python: pypy
 
 install:
@@ -45,27 +39,25 @@ install:
       brew outdated openssl || brew upgrade openssl
       brew install python
     fi
-  - "pip install --src .. -r requirements.txt"
+  - pip install -U virtualenv
+  - ./dev.sh
+  - source ./venv/bin/activate
 
 before_script:
   - "openssl version -a"
+  - "python -c \"from OpenSSL import SSL; print(SSL.SSLeay_version(SSL.SSLEAY_VERSION))\""
 
 script:
-  - "py.test -n 4 --cov libmproxy"
+  - "py.test --cov netlib --cov mitmproxy --cov pathod ./test/$SCOPE"
 
 after_success:
   - coveralls
   - |
-    if [[ $TRAVIS_OS_NAME == "osx" && $TRAVIS_BRANCH == "master" && $TRAVIS_PULL_REQUEST == "false" ]]
+    if [[ $TRAVIS_OS_NAME == "osx" && $TRAVIS_PULL_REQUEST == "false" && ($TRAVIS_BRANCH == "master" || -n $TRAVIS_TAG) ]]
     then
-        brew install curl --with-libssh2
-        git clone https://github.com/mitmproxy/release.git ../release
-        pip install -e ../release
-        python ../release/rtool.py -p mitmproxy bdist
-        for f in ../release/dist/*
-        do
-          $(brew --prefix curl)/bin/curl -u $SNAPSHOT_AUTH --hostpubmd5 $SNAPSHOT_PUBKEY --retry 5 -T $f sftp://$SNAPSHOT_HOST/
-        done
+        pip install -e ./release
+        python ./release/rtool.py bdist
+        python ./release/rtool.py upload-snapshot --bdist --wheel
     fi
 
 notifications:
@@ -76,20 +68,12 @@ notifications:
     on_failure: always
   slack:
     rooms:
-      - mitmproxy:YaDGC9Gt9TEM7o8zkC2OLNsu
-    on_success: change
+      - mitmproxy:YaDGC9Gt9TEM7o8zkC2OLNsu#ci
+    on_success: always
     on_failure: always
-
-# exclude cryptography from cache
-# it depends on libssl-dev version
-# which needs to be compiled specifically to each version
-before_cache:
-  - pip uninstall -y cryptography
 
 cache:
   directories:
     - $HOME/.cache/pip
-    - /home/travis/virtualenv/python2.7.9/lib/python2.7/site-packages
-    - /home/travis/virtualenv/python2.7.9/bin
-    - /home/travis/virtualenv/pypy-2.5.0/site-packages
-    - /home/travis/virtualenv/pypy-2.5.0/bin
+    - $HOME/.pyenv
+    - $HOME/Library/Caches/pip

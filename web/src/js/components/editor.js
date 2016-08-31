@@ -1,6 +1,6 @@
-var React = require("react");
-var common = require("./common.js");
-var utils = require("../utils.js");
+import React from "react";
+import ReactDOM from 'react-dom';
+import {Key} from "../utils.js";
 
 var contentToHtml = function (content) {
     return _.escape(content);
@@ -98,12 +98,12 @@ var EditorBase = React.createClass({
             range = document.caretRangeFromPoint(e.clientX, e.clientY);
         } else {
             range = document.createRange();
-            range.selectNodeContents(React.findDOMNode(this));
+            range.selectNodeContents(ReactDOM.findDOMNode(this));
         }
 
         this._ignore_events = true;
         this.setState({editable: true}, function () {
-            var node = React.findDOMNode(this);
+            var node = ReactDOM.findDOMNode(this);
             node.blur();
             node.focus();
             this._ignore_events = false;
@@ -117,7 +117,7 @@ var EditorBase = React.createClass({
         // a stop would cause a blur as a side-effect.
         // but a blur event must trigger a stop as well.
         // to fix this, make stop = blur and do the actual stop in the onBlur handler.
-        React.findDOMNode(this).blur();
+        ReactDOM.findDOMNode(this).blur();
         this.props.onStop && this.props.onStop();
     },
     _stop: function (e) {
@@ -126,24 +126,24 @@ var EditorBase = React.createClass({
         }
         console.log("_stop", _.extend({}, e));
         window.getSelection().removeAllRanges(); //make sure that selection is cleared on blur
-        var node = React.findDOMNode(this);
+        var node = ReactDOM.findDOMNode(this);
         var content = this.props.nodeToContent(node);
         this.setState({editable: false});
         this.props.onDone(content);
         this.props.onBlur && this.props.onBlur(e);
     },
     reset: function () {
-        React.findDOMNode(this).innerHTML = this.props.contentToHtml(this.props.content);
+        ReactDOM.findDOMNode(this).innerHTML = this.props.contentToHtml(this.props.content);
     },
     onKeyDown: function (e) {
         e.stopPropagation();
         switch (e.keyCode) {
-            case utils.Key.ESC:
+            case Key.ESC:
                 e.preventDefault();
                 this.reset();
                 this.stop();
                 break;
-            case utils.Key.ENTER:
+            case Key.ENTER:
                 if (this.props.submitOnEnter && !e.shiftKey) {
                     e.preventDefault();
                     this.stop();
@@ -154,7 +154,7 @@ var EditorBase = React.createClass({
         }
     },
     onInput: function () {
-        var node = React.findDOMNode(this);
+        var node = ReactDOM.findDOMNode(this);
         var content = this.props.nodeToContent(node);
         this.props.onInput && this.props.onInput(content);
     }
@@ -212,8 +212,10 @@ var ValidateEditor = React.createClass({
 /*
  Text Editor with mitmweb-specific convenience features
  */
-var ValueEditor = React.createClass({
-    mixins: [common.ChildFocus],
+export var ValueEditor = React.createClass({
+    contextTypes: {
+        returnFocus: React.PropTypes.func
+    },
     propTypes: {
         content: React.PropTypes.string.isRequired,
         onDone: React.PropTypes.func.isRequired,
@@ -228,13 +230,9 @@ var ValueEditor = React.createClass({
         />;
     },
     focus: function () {
-        React.findDOMNode(this).focus();
+        ReactDOM.findDOMNode(this).focus();
     },
     onStop: function () {
-        this.returnFocus();
+        this.context.returnFocus();
     }
 });
-
-module.exports = {
-    ValueEditor: ValueEditor
-};

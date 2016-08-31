@@ -1,7 +1,7 @@
-var EventEmitter = require('events').EventEmitter;
-var _ = require("lodash");
+import {EventEmitter} from 'events';
+import _ from "lodash";
 
-var utils = require("../utils.js");
+import utils from "../utils.js";
 
 function SortByStoreOrder(elem) {
     return this.store.index(elem.id);
@@ -12,7 +12,7 @@ var default_filt = function (elem) {
     return true;
 };
 
-function StoreView(store, filt, sortfun) {
+export function StoreView(store, filt, sortfun) {
     EventEmitter.call(this);
 
     this.store = store;
@@ -59,12 +59,12 @@ _.extend(StoreView.prototype, EventEmitter.prototype, {
         });
         this.emit("recalculate");
     },
-    index: function (elem) {
-        return _.sortedIndex(this.list, elem, this.sortfun);
+    indexOf: function (elem) {
+        return this.list.indexOf(elem, _.sortedIndexBy(this.list, elem, this.sortfun));
     },
     add: function (elem) {
         if (this.filt(elem)) {
-            var idx = this.index(elem);
+            var idx = _.sortedIndexBy(this.list, elem, this.sortfun);
             if (idx === this.list.length) { //happens often, .push is way faster.
                 this.list.push(elem);
             } else {
@@ -109,7 +109,3 @@ _.extend(StoreView.prototype, EventEmitter.prototype, {
         }
     }
 });
-
-module.exports = {
-    StoreView: StoreView
-};

@@ -1,11 +1,12 @@
-var React = require("react");
-var $ = require("jquery");
+import React from "react";
+import ReactDOM from 'react-dom';
+import $ from "jquery";
 
-var Filt = require("../filt/filt.js");
-var utils = require("../utils.js");
-var common = require("./common.js");
-var actions = require("../actions.js");
-var Query = require("../actions.js").Query;
+import Filt from "../filt/filt.js";
+import {Key} from "../utils.js";
+import {Router} from "./common.js";
+import {SettingsActions, FlowActions} from "../actions.js";
+import {Query} from "../actions.js";
 
 var FilterDocs = React.createClass({
     statics: {
@@ -50,7 +51,9 @@ var FilterDocs = React.createClass({
     }
 });
 var FilterInput = React.createClass({
-    mixins: [common.ChildFocus],
+    contextTypes: {
+        returnFocus: React.PropTypes.func
+    },
     getInitialState: function () {
         // Consider both focus and mouseover for showing/hiding the tooltip,
         // because onBlur of the input is triggered before the click on the tooltip
@@ -76,26 +79,24 @@ var FilterInput = React.createClass({
     },
     isValid: function (filt) {
         try {
-            Filt.parse(filt || this.state.value);
+            var str = filt || this.state.value;
+            if(str){
+                Filt.parse(filt || this.state.value);
+            }
             return true;
         } catch (e) {
             return false;
         }
     },
     getDesc: function () {
-        var desc;
-        try {
-            desc = Filt.parse(this.state.value).desc;
-        } catch (e) {
-            desc = "" + e;
+        if(this.state.value) {
+            try {
+                return Filt.parse(this.state.value).desc;
+            } catch (e) {
+                return "" + e;
+            }
         }
-        if (desc !== "true") {
-            return desc;
-        } else {
-            return (
-                <FilterDocs/>
-            );
-        }
+        return <FilterDocs/>;
     },
     onFocus: function () {
         this.setState({focus: true});
@@ -110,7 +111,7 @@ var FilterInput = React.createClass({
         this.setState({mousefocus: false});
     },
     onKeyDown: function (e) {
-        if (e.keyCode === utils.Key.ESC || e.keyCode === utils.Key.ENTER) {
+        if (e.keyCode === Key.ESC || e.keyCode === Key.ENTER) {
             this.blur();
             // If closed using ESC/ENTER, hide the tooltip.
             this.setState({mousefocus: false});
@@ -118,11 +119,11 @@ var FilterInput = React.createClass({
         e.stopPropagation();
     },
     blur: function () {
-        this.refs.input.getDOMNode().blur();
-        this.returnFocus();
+        ReactDOM.findDOMNode(this.refs.input).blur();
+        this.context.returnFocus();
     },
     select: function () {
-        this.refs.input.getDOMNode().select();
+        ReactDOM.findDOMNode(this.refs.input).select();
     },
     render: function () {
         var isValid = this.isValid();
@@ -159,8 +160,11 @@ var FilterInput = React.createClass({
     }
 });
 
-var MainMenu = React.createClass({
-    mixins: [common.Navigation, common.RouterState, common.SettingsState],
+export var MainMenu = React.createClass({
+    mixins: [Router],
+    propTypes: {
+        settings: React.PropTypes.object.isRequired,
+    },
     statics: {
         title: "Start",
         route: "flows"
@@ -168,20 +172,20 @@ var MainMenu = React.createClass({
     onSearchChange: function (val) {
         var d = {};
         d[Query.SEARCH] = val;
-        this.setQuery(d);
+        this.updateLocation(undefined, d);
     },
     onHighlightChange: function (val) {
         var d = {};
         d[Query.HIGHLIGHT] = val;
-        this.setQuery(d);
+        this.updateLocation(undefined, d);
     },
     onInterceptChange: function (val) {
-        actions.SettingsActions.update({intercept: val});
+        SettingsActions.update({intercept: val});
     },
     render: function () {
         var search = this.getQuery()[Query.SEARCH] || "";
         var highlight = this.getQuery()[Query.HIGHLIGHT] || "";
-        var intercept = this.state.settings.intercept || "";
+        var intercept = this.props.settings.intercept || "";
 
         return (
             <div>
@@ -220,7 +224,7 @@ var ViewMenu = React.createClass({
         title: "View",
         route: "flows"
     },
-    mixins: [common.Navigation, common.RouterState],
+    mixins: [Router],
     toggleEventLog: function () {
         var d = {};
 
@@ -230,7 +234,7 @@ var ViewMenu = React.createClass({
             d[Query.SHOW_EVENTLOG] = "t"; // any non-false value will do it, keep it short
         }
 
-        this.setQuery(d);
+        this.updateLocation(undefined, d);
     },
     render: function () {
         var showEventLog = this.getQuery()[Query.SHOW_EVENTLOG];
@@ -282,7 +286,7 @@ var FileMenu = React.createClass({
     handleNewClick: function (e) {
         e.preventDefault();
         if (confirm("Delete all flows?")) {
-            actions.FlowActions.clear();
+            FlowActions.clear();
         }
     },
     handleOpenClick: function (e) {
@@ -348,8 +352,11 @@ var FileMenu = React.createClass({
 var header_entries = [MainMenu, ViewMenu /*, ReportsMenu */];
 
 
-var Header = React.createClass({
-    mixins: [common.Navigation],
+export var Header = React.createClass({
+    mixins: [Router],
+    propTypes: {
+        settings: React.PropTypes.object.isRequired,
+    },
     getInitialState: function () {
         return {
             active: header_entries[0]
@@ -357,7 +364,7 @@ var Header = React.createClass({
     },
     handleClick: function (active, e) {
         e.preventDefault();
-        this.replaceWith(active.route);
+        this.updateLocation(active.route);
         this.setState({active: active});
     },
     render: function () {
@@ -385,15 +392,9 @@ var Header = React.createClass({
                     {header}
                 </nav>
                 <div className="menu">
-                    <this.state.active ref="active"/>
+                    <this.state.active ref="active" settings={this.props.settings}/>
                 </div>
             </header>
         );
     }
 });
-
-
-module.exports = {
-    Header: Header,
-    MainMenu: MainMenu
-};

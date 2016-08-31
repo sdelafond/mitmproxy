@@ -1,7 +1,7 @@
 # Usage: mitmdump -s "iframe_injector.py url"
 # (this script works best with --anticache)
 from bs4 import BeautifulSoup
-from libmproxy.models import decoded
+from mitmproxy.models import decoded
 
 
 def start(context, argv):
@@ -14,7 +14,7 @@ def response(context, flow):
     if flow.request.host in context.iframe_url:
         return
     with decoded(flow.response):  # Remove content encoding (gzip, ...)
-        html = BeautifulSoup(flow.response.content)
+        html = BeautifulSoup(flow.response.content, "lxml")
         if html.body:
             iframe = html.new_tag(
                 "iframe",

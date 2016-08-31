@@ -1,18 +1,20 @@
-var React = require("react");
-var _ = require("lodash");
+import React from "react";
+import ReactDOM from 'react-dom';
+import _ from "lodash";
 
-var utils = require("../utils.js");
-var common = require("./common.js");
+import {Key} from "../utils.js";
 
 var Prompt = React.createClass({
-    mixins: [common.ChildFocus],
+    contextTypes: {
+        returnFocus: React.PropTypes.func
+    },
     propTypes: {
         options: React.PropTypes.array.isRequired,
         done: React.PropTypes.func.isRequired,
         prompt: React.PropTypes.string
     },
     componentDidMount: function () {
-        React.findDOMNode(this).focus();
+        ReactDOM.findDOMNode(this).focus();
     },
     onKeyDown: function (e) {
         e.stopPropagation();
@@ -20,12 +22,12 @@ var Prompt = React.createClass({
         var opts = this.getOptions();
         for (var i = 0; i < opts.length; i++) {
             var k = opts[i].key;
-            if (utils.Key[k.toUpperCase()] === e.keyCode) {
+            if (Key[k.toUpperCase()] === e.keyCode) {
                 this.done(k);
                 return;
             }
         }
-        if (e.keyCode === utils.Key.ESC || e.keyCode === utils.Key.ENTER) {
+        if (e.keyCode === Key.ESC || e.keyCode === Key.ENTER) {
             this.done(false);
         }
     },
@@ -34,7 +36,7 @@ var Prompt = React.createClass({
     },
     done: function (ret) {
         this.props.done(ret);
-        this.returnFocus();
+        this.context.returnFocus();
     },
     getOptions: function () {
         var opts = [];
@@ -97,4 +99,4 @@ var Prompt = React.createClass({
     }
 });
 
-module.exports = Prompt;
+export default Prompt;
