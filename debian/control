@@ -2,16 +2,51 @@ Source: mitmproxy
 Section: net
 Priority: optional
 Maintainer: Sebastien Delafond <seb@debian.org>
-Build-Depends: debhelper (>= 9), dh-python, python-all, python-setuptools
+Build-Depends: debhelper (>= 9), dh-python, libssl-dev, python-dev,
+ python-autopep8,
+ python-certifi,
+ python-construct,
+ python-h2,
+ python-hpack,
+ python-requests,
+ python-setuptools,
+ python-urwid,
+ python-backports.ssl-match-hostname,
+ python-cffi,
+ python-configargparse,
+ python-flask,
+ python-html2text,
+ python-hyperframe,
+ python-lxml,
+ python-mock,
+ python-openssl,
+ python-passlib,
+ python-pil,
+ python-pyparsing,
+ python-pytest,
+ python-pytest-cov,
+ python-pytest-timeout,
+ python-tornado,
+ python-watchdog,
+ python-wheel,
+ python-blinker,
+ python-bs4,
+ python-typing,
+ python-multipartposthandler,
+ python-brotli,
+ python-cssutils,
+ python-jsbeautifier,
+ python-tz
 Standards-Version: 3.9.6
 Vcs-Git: git://anonscm.debian.org/collab-maint/mitmproxy.git
 Vcs-Browser: http://anonscm.debian.org/git/collab-maint/mitmproxy.git
 
 Package: mitmproxy
 Architecture: all
-Depends: ${misc:Depends}, python-netlib (>= 0.13), ${python:Depends}, ${shlibs:Depends}
+Depends: ${misc:Depends}, ${python:Depends}, ${shlibs:Depends}, python-openssl (>= 0.15.1), python-hpack, python-six, python-backports.ssl-match-hostname
 Recommends: python-pyperclip
 Provides: ${python:Provides}
+Conflicts: python-netlib
 Description: SSL-capable man-in-the-middle HTTP proxy
  mitmproxy is an SSL-capable man-in-the-middle HTTP proxy. It provides
  a console interface that allows traffic flows to be inspected and

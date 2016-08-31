@@ -1,3 +1,15 @@
+mitmproxy (0.17.1+20160928+1ed0dbdd-1~1.gbp9b7196) UNRELEASED; urgency=medium
+
+  * New upstream version 0.17.1+20160928+1ed0dbdd
+
+ -- Sebastien Delafond <seb@debian.org>  Wed, 31 Aug 2016 20:16:20 +0200
+
+mitmproxy (0.17.1+20160928+1ed0dbdd-1~1.gbp9b7196) UNRELEASED; urgency=medium
+
+  * New upstream version 0.17.1+20160928+1ed0dbdd (Closes: #836276)
+
+ -- Sebastien Delafond <seb@debian.org>  Wed, 31 Aug 2016 20:16:20 +0200
+
 mitmproxy (0.15-2) unstable; urgency=medium
 
   * Add CONTRIBUTORS and examples/ (Closes: #816189)
