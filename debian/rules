@@ -1,6 +1,7 @@
 #!/usr/bin/make -f
 
 export PYBUILD_NAME=mitmproxy
+export PYBUILD_TEST_ARGS=-k-TestServerIPv6
 
 %:
 	dh $@ --with python2 --buildsystem=pybuild
