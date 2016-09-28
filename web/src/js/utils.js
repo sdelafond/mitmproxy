@@ -1,12 +1,11 @@
-var $ = require("jquery");
-var _ = require("lodash");
-var actions = require("./actions.js");
+import _ from 'lodash'
+import React from 'react'
+import shallowEqual from 'shallowequal'
 
-window.$ = $;
 window._ = _;
-window.React = require("react");
+window.React = React;
 
-var Key = {
+export var Key = {
     UP: 38,
     DOWN: 40,
     PAGE_UP: 33,
@@ -28,7 +27,7 @@ for (var i = 65; i <= 90; i++) {
 }
 
 
-var formatSize = function (bytes) {
+export var formatSize = function (bytes) {
     if (bytes === 0)
         return "0";
     var prefix = ["b", "kb", "mb", "gb", "tb"];
@@ -46,7 +45,7 @@ var formatSize = function (bytes) {
 };
 
 
-var formatTimeDelta = function (milliseconds) {
+export var formatTimeDelta = function (milliseconds) {
     var time = milliseconds;
     var prefix = ["ms", "s", "min", "h"];
     var div = [1000, 60, 60];
@@ -59,7 +58,7 @@ var formatTimeDelta = function (milliseconds) {
 };
 
 
-var formatTimeStamp = function (seconds) {
+export var formatTimeStamp = function (seconds) {
     var ts = (new Date(seconds * 1000)).toISOString();
     return ts.replace("T", " ").replace("Z", "");
 };
@@ -68,7 +67,7 @@ var formatTimeStamp = function (seconds) {
 // but we can only provide a key function.
 // This beauty "reverses" a JS string.
 var end = String.fromCharCode(0xffff);
-function reverseString(s) {
+export function reverseString(s) {
     return String.fromCharCode.apply(String,
             _.map(s.split(""), function (c) {
                 return 0xffff - c.charCodeAt(0);
@@ -80,33 +79,56 @@ function getCookie(name) {
     var r = document.cookie.match(new RegExp("\\b" + name + "=([^;]*)\\b"));
     return r ? r[1] : undefined;
 }
-var xsrf = $.param({_xsrf: getCookie("_xsrf")});
+const xsrf = `_xsrf=${getCookie("_xsrf")}`;
 
-//Tornado XSRF Protection.
-$.ajaxPrefilter(function (options) {
-    if (["post", "put", "delete"].indexOf(options.type.toLowerCase()) >= 0 && options.url[0] === "/") {
-        if(options.url.indexOf("?") === -1){
-            options.url += "?" + xsrf;
+export function fetchApi(url, options={}) {
+    if (options.method && options.method !== "GET") {
+        if (url.indexOf("?") === -1) {
+            url += "?" + xsrf;
         } else {
-            options.url += "&" + xsrf;
+            url += "&" + xsrf;
         }
     }
-});
-// Log AJAX Errors
-$(document).ajaxError(function (event, jqXHR, ajaxSettings, thrownError) {
-    if (thrownError === "abort") {
-        return;
-    }
-    var message = jqXHR.responseText;
-    console.error(thrownError, message, arguments);
-    actions.EventLogActions.add_event(thrownError + ": " + message);
-    alert(message);
-});
 
-module.exports = {
-    formatSize: formatSize,
-    formatTimeDelta: formatTimeDelta,
-    formatTimeStamp: formatTimeStamp,
-    reverseString: reverseString,
-    Key: Key,
-};
+    return fetch(url, {
+        credentials: 'same-origin',
+        ...options
+    });
+}
+
+fetchApi.put = (url, json, options) => fetchApi(
+    url,
+    {
+        method: "PUT",
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(json),
+        ...options
+    }
+)
+// deep comparison of two json objects (dicts). arrays are handeled as a single value.
+// return: json object including only the changed keys value pairs.
+export function getDiff(obj1, obj2) {
+    let result = {...obj2};
+    for(let key in obj1) {
+        if(_.isEqual(obj2[key], obj1[key]))
+            result[key] = undefined
+        else if(Object.prototype.toString.call(obj2[key]) === '[object Object]' &&
+                Object.prototype.toString.call(obj1[key]) === '[object Object]' )
+            result[key] = getDiff(obj1[key], obj2[key])
+    }
+    return result
+}
+
+export const pure = renderFn => class extends React.Component {
+    static displayName = renderFn.name
+
+    shouldComponentUpdate(nextProps) {
+        return !shallowEqual(this.props, nextProps)
+    }
+
+    render() {
+        return renderFn(this.props)
+    }
+}

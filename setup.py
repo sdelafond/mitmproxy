@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
 from codecs import open
 import os
-import sys
-from libmproxy import version
+
+from netlib import version
 
 # Based on https://github.com/pypa/sampleproject/blob/master/setup.py
 # and https://python-packaging-user-guide.readthedocs.org/
@@ -11,66 +11,6 @@ here = os.path.abspath(os.path.dirname(__file__))
 
 with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
-
-# Core dependencies
-deps = {
-    "netlib>=%s, <%s" % (version.MINORVERSION, version.NEXT_MINORVERSION),
-    "tornado>=4.3.0, <4.4",
-    "configargparse>=0.10.0, <0.11",
-    "pyperclip>=1.5.22, <1.6",
-    "blinker>=1.4, <1.5",
-    "pyparsing>=2.0.5, <2.1",
-    "html2text==2015.11.4",
-    "construct>=2.5.2, <2.6",
-    "six>=1.10.0, <1.11",
-    "lxml==3.4.4",  # there are no Windows wheels for 3.5!
-    "Pillow>=3.0.0, <3.1",
-    "watchdog>=0.8.3, <0.9",
-}
-# A script -> additional dependencies dict.
-scripts = {
-    "mitmproxy": {
-        "urwid>=1.3.1, <1.4",
-    },
-    "mitmdump": {
-        "click>=6.2, <6.3",
-    },
-    "mitmweb": set()
-}
-# Developer dependencies
-dev_deps = {
-    "mock>=1.0.1",
-    "pytest>=2.8.0",
-    "pytest-xdist>=1.13.1",
-    "pytest-cov>=2.1.0",
-    "coveralls>=0.4.1",
-    "pathod>=%s, <%s" % (version.MINORVERSION, version.NEXT_MINORVERSION),
-    "sphinx>=1.3.1",
-    "sphinx-autobuild>=0.5.2",
-    "sphinxcontrib-documentedlist>=0.2",
-}
-example_deps = {
-    "pytz==2015.7",
-    "harparser>=0.2, <0.3",
-    "beautifulsoup4>=4.4.1, <4.5",
-}
-# Add *all* script dependencies to developer dependencies.
-for script_deps in scripts.values():
-    dev_deps.update(script_deps)
-
-# Remove mitmproxy for Windows support.
-if os.name == "nt":
-    del scripts["mitmproxy"]
-    deps.add("pydivert>=0.0.7")  # Transparent proxying on Windows
-
-# Add dependencies for available scripts as core dependencies.
-for script_deps in scripts.values():
-    deps.update(script_deps)
-
-if sys.version_info < (3, 4):
-    example_deps.add("enum34>=1.0.4, <1.1")
-
-console_scripts = ["%s = libmproxy.main:%s" % (s, s) for s in scripts.keys()]
 
 setup(
     name="mitmproxy",
@@ -88,9 +28,12 @@ setup(
         "Environment :: Console :: Curses",
         "Operating System :: MacOS :: MacOS X",
         "Operating System :: POSIX",
+        "Operating System :: Microsoft :: Windows",
         "Programming Language :: Python",
         "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: Implementation :: CPython",
         "Programming Language :: Python :: Implementation :: PyPy",
         "Topic :: Security",
@@ -99,18 +42,85 @@ setup(
         "Topic :: Internet :: Proxy Servers",
         "Topic :: Software Development :: Testing"
     ],
-    packages=find_packages(),
+    packages=find_packages(include=[
+        "mitmproxy", "mitmproxy.*",
+        "pathod", "pathod.*",
+        "netlib", "netlib.*"
+    ]),
     include_package_data=True,
     entry_points={
-        'console_scripts': console_scripts},
-    install_requires=list(deps),
+        'console_scripts': [
+            "mitmproxy = mitmproxy.main:mitmproxy",
+            "mitmdump = mitmproxy.main:mitmdump",
+            "mitmweb = mitmproxy.main:mitmweb",
+            "pathod = pathod.pathod_cmdline:go_pathod",
+            "pathoc = pathod.pathoc_cmdline:go_pathoc"
+        ]
+    },
+    # https://packaging.python.org/en/latest/requirements/#install-requires
+    # It is not considered best practice to use install_requires to pin dependencies to specific versions.
+    install_requires=[
+        "backports.ssl_match_hostname>=3.5.0.1, <3.6",
+        "blinker>=1.4, <1.5",
+        "click>=6.2, <7.0",
+        "certifi>=2015.11.20.1",  # no semver here - this should always be on the last release!
+        "configargparse>=0.10, <0.12",
+        "construct>=2.5.2, <2.6",
+        "cryptography>=1.3, <1.6",
+        "cssutils>=1.0.1, <1.1",
+        "Flask>=0.10.1, <0.12",
+        "h2>=2.4.1, <3",
+        "html2text>=2016.1.8, <=2016.9.19",
+        "hyperframe>=4.0.1, <5",
+        "jsbeautifier>=1.6.3, <1.7",
+        "lxml>=3.5.0, <=3.6.0",  # no wheels for 3.6.1 yet.
+        "Pillow>=3.2, <3.4",
+        "passlib>=1.6.5, <1.7",
+        "pyasn1>=0.1.9, <0.2",
+        "pyOpenSSL>=16.0, <17.0",
+        "pyparsing>=2.1.3, <2.2",
+        "pyperclip>=1.5.22, <1.6",
+        "requests>=2.9.1, <2.12",
+        "six>=1.10, <1.11",
+        "tornado>=4.3, <4.5",
+        "urwid>=1.3.1, <1.4",
+        "watchdog>=0.8.3, <0.9",
+        "brotlipy>=0.5.1, <0.7",
+    ],
     extras_require={
-        'dev': list(dev_deps),
-        'contentviews': [
-            "pyamf>=0.7.2, <0.8",
-            "protobuf>=2.6.1, <2.7",
-            "cssutils>=1.0.1, <1.1"
+        ':sys_platform == "win32"': [
+            "pydivert>=0.0.7, <0.1",
         ],
-        'examples': list(example_deps)
+        ':sys_platform != "win32"': [
+        ],
+        # Do not use a range operator here: https://bitbucket.org/pypa/setuptools/issues/380
+        # Ubuntu Trusty and other still ship with setuptools < 17.1
+        ':python_version == "2.7"': [
+            "enum34>=1.0.4, <2",
+            "ipaddress>=1.0.15, <1.1",
+            "typing==3.5.2.2",
+        ],
+        'dev': [
+            "tox>=2.3, <3",
+            "mock>=2.0, <2.1",
+            "pytest>=3, <3.1",
+            "pytest-cov>=2.2.1, <3",
+            "pytest-timeout>=1.0.0, <2",
+            "pytest-xdist>=1.14, <2",
+            "pytest-faulthandler>=1.3.0, <2",
+            "sphinx>=1.3.5, <1.5",
+            "sphinx-autobuild>=0.5.2, <0.7",
+            "sphinxcontrib-documentedlist>=0.4.0, <0.5",
+            "sphinx_rtd_theme>=0.1.9, <0.2",
+        ],
+        'contentviews': [
+            # TODO: Find Python 3 replacements
+            # "protobuf>=2.6.1, <2.7",
+            # "pyamf>=0.8.0, <0.9",
+        ],
+        'examples': [
+            "beautifulsoup4>=4.4.1, <4.6",
+            "pytz>=2015.07.0, <=2016.6.1",
+        ]
     }
 )

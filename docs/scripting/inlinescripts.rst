@@ -15,9 +15,7 @@ client:
    :caption: examples/add_header.py
    :language: python
 
-The first argument to each event method is an instance of
-:py:class:`~libmproxy.script.ScriptContext` that lets the script interact with the global mitmproxy
-state. The **response** event also gets an instance of :py:class:`~libmproxy.script.ScriptContext`,
+All events that deal with an HTTP request get an instance of :py:class:`~mitmproxy.models.HTTPFlow`,
 which we can use to manipulate the response itself.
 
 We can now run this script using mitmdump or mitmproxy as follows:
@@ -36,21 +34,22 @@ We encourage you to either browse them locally or on `GitHub`_.
 Events
 ------
 
-.. TODO: Split this into Connection, HTTP and TCP events once we have TCP events.
+Script Lifecycle Events
+^^^^^^^^^^^^^^^^^^^^^^^
 
-The ``context`` argument passed to each event method is always a
-:py:class:`~libmproxy.script.ScriptContext` instance. It is guaranteed to be the same object
-for the scripts lifetime and is not shared between multiple inline scripts. You can safely use it
-to store any form of state you require.
-
-Events are listed in the order they usually occur.
-
-.. py:function:: start(context, argv)
+.. py:function:: start(context)
 
     Called once on startup, before any other events.
 
     :param List[str] argv: The inline scripts' arguments.
         For example, ``mitmproxy -s 'example.py --foo 42'`` sets argv to ``["--foo", "42"]``.
+
+.. py:function:: done(context)
+
+    Called once on script shutdown, after any other events.
+
+Connection Events
+^^^^^^^^^^^^^^^^^
 
 .. py:function:: clientconnect(context, root_layer)
 
@@ -61,17 +60,16 @@ Events are listed in the order they usually occur.
 
     :param Layer root_layer: The root layer (see :ref:`protocols` for an explanation what the root
         layer is), which provides transparent access to all attributes of the
-        :py:class:`~libmproxy.proxy.RootContext`. For example, ``root_layer.client_conn.address``
+        :py:class:`~mitmproxy.proxy.RootContext`. For example, ``root_layer.client_conn.address``
         gives the remote address of the connecting client.
 
+.. py:function:: clientdisconnect(context, root_layer)
 
-.. py:function:: request(context, flow)
+    Called when a client disconnects from the proxy.
 
-    Called when a client request has been received. The ``flow`` object is
-    guaranteed to have a non-None ``request`` attribute.
+    .. versionchanged:: 0.14
 
-    :param HTTPFlow flow: The flow containing the request which has been received.
-        The object is guaranteed to have a non-None ``request`` attribute.
+    :param Layer root_layer: see :py:func:`clientconnect`
 
 .. py:function:: serverconnect(context, server_conn)
 
@@ -80,6 +78,25 @@ Events are listed in the order they usually occur.
 
     :param ServerConnection server_conn: The server connection object. It is guaranteed to have a
         non-None ``address`` attribute.
+
+.. py:function:: serverdisconnect(context, server_conn)
+
+    Called when the proxy has closed the server connection.
+
+    .. versionadded:: 0.14
+
+    :param ServerConnection server_conn: see :py:func:`serverconnect`
+
+HTTP Events
+^^^^^^^^^^^
+
+.. py:function:: request(context, flow)
+
+    Called when a client request has been received. The ``flow`` object is
+    guaranteed to have a non-None ``request`` attribute.
+
+    :param HTTPFlow flow: The flow containing the request which has been received.
+        The object is guaranteed to have a non-None ``request`` attribute.
 
 .. py:function:: responseheaders(context, flow)
 
@@ -109,26 +126,31 @@ Events are listed in the order they usually occur.
     :param HTTPFlow flow: The flow containing the error.
         It is guaranteed to have non-None ``error`` attribute.
 
-.. py:function:: serverdisconnect(context, server_conn)
+WebSockets Events
+^^^^^^^^^^^^^^^^^
 
-    Called when the proxy has closed the server connection.
+.. py:function:: websockets_handshake(context, flow)
 
-    .. versionadded:: 0.14
+    Called when a client wants to establish a WebSockets connection.
+    The WebSockets-specific headers can be manipulated to manipulate the handshake.
+    The ``flow`` object is guaranteed to have a non-None ``request`` attribute.
 
-    :param ServerConnection server_conn: see :py:func:`serverconnect`
+    :param HTTPFlow flow: The flow containing the request which has been received.
+        The object is guaranteed to have a non-None ``request`` attribute.
 
-.. py:function:: clientdisconnect(context, root_layer)
+TCP Events
+^^^^^^^^^^
 
-    Called when a client disconnects from the proxy.
+.. py:function:: tcp_message(context, tcp_msg)
 
-    .. versionchanged:: 0.14
+    .. warning::  API is subject to change
 
-    :param Layer root_layer: see :py:func:`clientconnect`
+    If the proxy is in :ref:`TCP mode <tcpproxy>`, this event is called when it
+    receives a TCP payload from the client or server.
 
-.. py:function:: done(context)
+    The sender and receiver are identifiable. The message is user-modifiable.
 
-    Called once on script shutdown, after any other events.
-
+    :param TcpMessage tcp_msg: see *examples/tcp_message.py*
 
 API
 ---
@@ -138,41 +160,33 @@ The canonical API documentation is the code, which you can browse here, locally 
 
 The main classes you will deal with in writing mitmproxy scripts are:
 
-:py:class:`~libmproxy.script.ScriptContext`
-    - A handle for interacting with mitmproxy's Flow Master from within scripts.
-:py:class:`~libmproxy.models.ClientConnection`
+:py:class:`mitmproxy.flow.FlowMaster`
+    - The "heart" of mitmproxy, usually subclassed as :py:class:`mitmproxy.dump.DumpMaster` or
+      :py:class:`mitmproxy.console.ConsoleMaster`.
+:py:class:`~mitmproxy.models.ClientConnection`
     - Describes a client connection.
-:py:class:`~libmproxy.models.ServerConnection`
+:py:class:`~mitmproxy.models.ServerConnection`
     - Describes a server connection.
-:py:class:`~libmproxy.models.HTTPFlow`
+:py:class:`~mitmproxy.models.HTTPFlow`
     - A collection of objects representing a single HTTP transaction.
-:py:class:`~libmproxy.models.HTTPRequest`
+:py:class:`~mitmproxy.models.HTTPRequest`
     - An HTTP request.
-:py:class:`~libmproxy.models.HTTPResponse`
+:py:class:`~mitmproxy.models.HTTPResponse`
     - An HTTP response.
-:py:class:`~libmproxy.models.Error`
+:py:class:`~mitmproxy.models.Error`
     - A communications error.
 :py:class:`netlib.http.Headers`
     - A dictionary-like object for managing HTTP headers.
 :py:class:`netlib.certutils.SSLCert`
     - Exposes information SSL certificates.
-:py:class:`libmproxy.flow.FlowMaster`
-    - The "heart" of libmproxy, usually subclassed as :py:class:`libmproxy.dump.DumpMaster` or
-      :py:class:`libmproxy.console.ConsoleMaster`.
 
-Script Context
---------------
-
-.. autoclass:: libmproxy.script.ScriptContext
-    :members:
-    :undoc-members:
 
 Running scripts in parallel
 ---------------------------
 
 We have a single flow primitive, so when a script is blocking, other requests are not processed.
 While that's usually a very desirable behaviour, blocking scripts can be run threaded by using the
-:py:obj:`libmproxy.script.concurrent` decorator.
+:py:obj:`mitmproxy.script.concurrent` decorator.
 **If your script does not block, you should avoid the overhead of the decorator.**
 
 .. literalinclude:: ../../examples/nonblocking.py
@@ -193,9 +207,9 @@ The arguments are then exposed in the start event:
 Running scripts on saved flows
 ------------------------------
 
-Sometimes, we want to run a script on :py:class:`~libmproxy.models.Flow` objects that are already
+Sometimes, we want to run a script on :py:class:`~mitmproxy.models.Flow` objects that are already
 complete.  This happens when you start a script, and then load a saved set of flows from a file
-(see the "scripted data transformation" example `here <https://mitmproxy.org/doc/mitmdump.html>`_).
+(see the "scripted data transformation" example :ref:`here <mitmdump>`).
 It also happens when you run a one-shot script on a single flow through the ``|`` (pipe) shortcut
 in mitmproxy.
 

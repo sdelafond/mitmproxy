@@ -1,7 +1,11 @@
 .. _models:
 
-Models
-======
+Datastructures
+==============
+
+.. automodule:: mitmproxy.models
+    :members: HTTPFlow, HTTPRequest, HTTPResponse
+
 
 .. automodule:: netlib.http
 
@@ -35,6 +39,8 @@ Models
 
     .. autoclass:: Response
 
+        .. automethod:: make
+
         .. rubric:: Data
         .. autoattribute:: http_version
         .. autoattribute:: status_code
@@ -52,8 +58,24 @@ Models
         :special-members:
         :no-undoc-members:
 
-    .. autoclass:: decoded
+.. automodule:: netlib.multidict
 
-.. automodule:: libmproxy.models
+    .. autoclass:: MultiDictView
+
+        .. automethod:: get_all
+        .. automethod:: set_all
+        .. automethod:: add
+        .. automethod:: insert
+        .. automethod:: keys
+        .. automethod:: values
+        .. automethod:: items
+        .. automethod:: to_dict
+
+.. autoclass:: mitmproxy.models.Error
     :show-inheritance:
-    :members: HTTPFlow, Error, ClientConnection, ServerConnection
+
+.. autoclass:: mitmproxy.models.ServerConnection
+    :show-inheritance:
+
+.. autoclass:: mitmproxy.models.ClientConnection
+    :show-inheritance:

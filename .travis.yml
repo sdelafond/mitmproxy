@@ -1,40 +1,40 @@
 sudo: false
 language: python
 
+addons:
+  apt:
+    sources:
+      # Debian sid currently holds OpenSSL 1.0.2
+      # change this with future releases!
+      - debian-sid
+    packages:
+      - libssl-dev
+
+env:
+  global:
+    - CI_DEPS=codecov>=2.0.5
+    - CI_COMMANDS=codecov
+
 matrix:
   fast_finish: true
   include:
+    - python: 3.5
+      env: TOXENV=lint
+    - os: osx
+      osx_image: xcode7.3
+      language: generic
+      env: TOXENV=py35 BDIST=1
+    - python: 3.5
+      env: TOXENV=py35 BDIST=1
+    - python: 3.5
+      env: TOXENV=py35 NO_ALPN=1
     - python: 2.7
-    - language: generic
-      os: osx
-      osx_image: xcode7.1
+      env: TOXENV=py27
     - python: 2.7
-      env: OPENSSL=1.0.2
-      addons:
-        apt:
-          sources:
-            # Debian sid currently holds OpenSSL 1.0.2
-            # change this with future releases!
-            - debian-sid
-          packages:
-            - libssl-dev
-    - python: 2.7
-      env: DOCS=1
-      script: 'cd docs && make html'
-    - python: pypy
-    - python: pypy
-      env: OPENSSL=1.0.2
-      addons:
-        apt:
-          sources:
-            # Debian sid currently holds OpenSSL 1.0.2
-            # change this with future releases!
-            - debian-sid
-          packages:
-            - libssl-dev
+      env: TOXENV=py27 NO_ALPN=1
+    - python: 3.5
+      env: TOXENV=docs
   allow_failures:
-    # We allow pypy to fail until Travis fixes their infrastructure to a pypy
-    # with a recent enought CFFI library to run cryptography 1.0+.
     - python: pypy
 
 install:
@@ -42,54 +42,40 @@ install:
     if [[ $TRAVIS_OS_NAME == "osx" ]]
     then
       brew update || brew update # try again if it fails
-      brew outdated openssl || brew upgrade openssl
-      brew install python
+      brew upgrade
+      brew reinstall openssl
+      brew reinstall pyenv
+      eval "$(pyenv init -)"
+      env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install --skip-existing 3.5.2
+      pyenv global 3.5.2
+      pyenv shell 3.5.2
+      pip install -U pip setuptools wheel virtualenv
     fi
-  - "pip install --src .. -r requirements.txt"
+  - pip install tox
 
-before_script:
-  - "openssl version -a"
-
-script:
-  - "py.test -n 4 --cov libmproxy"
+script: tox -- --cov netlib --cov mitmproxy --cov pathod -v
 
 after_success:
-  - coveralls
   - |
-    if [[ $TRAVIS_OS_NAME == "osx" && $TRAVIS_BRANCH == "master" && $TRAVIS_PULL_REQUEST == "false" ]]
+    if [[ $BDIST == "1" && $TRAVIS_PULL_REQUEST == "false" && ($TRAVIS_BRANCH == "master" || -n $TRAVIS_TAG) ]]
     then
-        brew install curl --with-libssh2
-        git clone https://github.com/mitmproxy/release.git ../release
-        pip install -e ../release
-        python ../release/rtool.py -p mitmproxy bdist
-        for f in ../release/dist/*
-        do
-          $(brew --prefix curl)/bin/curl -u $SNAPSHOT_AUTH --hostpubmd5 $SNAPSHOT_PUBKEY --retry 5 -T $f sftp://$SNAPSHOT_HOST/
-        done
+        git fetch --unshallow
+        ./dev.sh 3.5
+        source venv3.5/bin/activate
+        pip install -e ./release
+        python -u ./release/rtool.py bdist
+        python -u ./release/rtool.py upload-snapshot --bdist
     fi
 
 notifications:
-  irc:
-    channels:
-      - "irc.oftc.net#mitmproxy"
-    on_success: change
-    on_failure: always
   slack:
-    rooms:
-      - mitmproxy:YaDGC9Gt9TEM7o8zkC2OLNsu
-    on_success: change
-    on_failure: always
-
-# exclude cryptography from cache
-# it depends on libssl-dev version
-# which needs to be compiled specifically to each version
-before_cache:
-  - pip uninstall -y cryptography
+      -rooms:
+          mitmproxy:YaDGC9Gt9TEM7o8zkC2OLNsu
+      on_success: change
+      on_failure: change
+      on_start: never
 
 cache:
   directories:
+    - $HOME/.pyenv
     - $HOME/.cache/pip
-    - /home/travis/virtualenv/python2.7.9/lib/python2.7/site-packages
-    - /home/travis/virtualenv/python2.7.9/bin
-    - /home/travis/virtualenv/pypy-2.5.0/site-packages
-    - /home/travis/virtualenv/pypy-2.5.0/bin

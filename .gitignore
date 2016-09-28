@@ -1,28 +1,21 @@
 .DS_Store
 MANIFEST
-/build
-/dist
-/tmp
-/doc
-/venv
-/libmproxy/gui
-/release/build
+*/tmp
+/venv*
 *.py[cdo]
 *.swp
 *.swo
-mitmproxy.egg-info/
-mitmproxyc
-mitmdumpc
-.coverage
+*.egg-info/
+.coverage*
 .idea
-netlib
-pathod
-libpathod
 .cache/
+.tox*/
+build/
 
 # UI
 
 node_modules
 bower_components
-*.compiled.js
 *.map
+sslkeylogfile.log
+.tox/
