@@ -20,14 +20,16 @@ Example:
 
 Authors: Maximilian Hils, Matthew Tuusberg
 """
-from __future__ import (absolute_import, print_function, division)
+from __future__ import absolute_import, print_function, division
 import collections
 import random
 
+import sys
 from enum import Enum
 
-from libmproxy.exceptions import TlsProtocolException
-from libmproxy.protocol import TlsLayer, RawTCPLayer
+import mitmproxy
+from mitmproxy.exceptions import TlsProtocolException
+from mitmproxy.protocol import TlsLayer, RawTCPLayer
 
 
 class InterceptionResult(Enum):
@@ -40,6 +42,7 @@ class _TlsStrategy(object):
     """
     Abstract base class for interception strategies.
     """
+
     def __init__(self):
         # A server_address -> interception results mapping
         self.history = collections.defaultdict(lambda: collections.deque(maxlen=200))
@@ -78,6 +81,7 @@ class ProbabilisticStrategy(_TlsStrategy):
     """
     Fixed probability that we intercept a given connection.
     """
+
     def __init__(self, p):
         self.p = p
         super(ProbabilisticStrategy, self).__init__()
@@ -94,7 +98,6 @@ class TlsFeedback(TlsLayer):
 
     def _establish_tls_with_client(self):
         server_address = self.server_conn.address
-        tls_strategy = self.script_context.tls_strategy
 
         try:
             super(TlsFeedback, self)._establish_tls_with_client()
@@ -107,15 +110,18 @@ class TlsFeedback(TlsLayer):
 
 # inline script hooks below.
 
+tls_strategy = None
 
-def start(context, argv):
-    if len(argv) == 2:
-        context.tls_strategy = ProbabilisticStrategy(float(argv[1]))
+
+def start():
+    global tls_strategy
+    if len(sys.argv) == 2:
+        tls_strategy = ProbabilisticStrategy(float(sys.argv[1]))
     else:
-        context.tls_strategy = ConservativeStrategy()
+        tls_strategy = ConservativeStrategy()
 
 
-def next_layer(context, next_layer):
+def next_layer(next_layer):
     """
     This hook does the actual magic - if the next layer is planned to be a TLS layer,
     we check if we want to enter pass-through mode instead.
@@ -123,14 +129,13 @@ def next_layer(context, next_layer):
     if isinstance(next_layer, TlsLayer) and next_layer._client_tls:
         server_address = next_layer.server_conn.address
 
-        if context.tls_strategy.should_intercept(server_address):
+        if tls_strategy.should_intercept(server_address):
             # We try to intercept.
             # Monkey-Patch the layer to get feedback from the TLSLayer if interception worked.
             next_layer.__class__ = TlsFeedback
-            next_layer.script_context = context
         else:
             # We don't intercept - reply with a pass-through layer and add a "skipped" entry.
-            context.log("TLS passthrough for %s" % repr(next_layer.server_conn.address), "info")
-            next_layer_replacement = RawTCPLayer(next_layer.ctx, logging=False)
-            next_layer.reply(next_layer_replacement)
-            context.tls_strategy.record_skipped(server_address)
+            mitmproxy.ctx.log("TLS passthrough for %s" % repr(next_layer.server_conn.address), "info")
+            next_layer_replacement = RawTCPLayer(next_layer.ctx, ignore=True)
+            next_layer.reply.send(next_layer_replacement)
+            tls_strategy.record_skipped(server_address)

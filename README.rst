@@ -1,80 +1,86 @@
-|travis| |coveralls| |downloads| |latest-release| |python-versions|
+mitmproxy
+^^^^^^^^^
 
-``mitmproxy`` is an interactive, SSL-capable man-in-the-middle proxy for HTTP
-with a console interface.
+|travis| |appveyor| |coverage| |latest_release| |python_versions|
+
+This repository contains the **mitmproxy** and **pathod** projects, as well as
+their shared networking library, **netlib**.
+
+``mitmproxy`` is an interactive, SSL-capable intercepting proxy with a console
+interface.
 
 ``mitmdump`` is the command-line version of mitmproxy. Think tcpdump for HTTP.
 
-``libmproxy`` is the library that mitmproxy and mitmdump are built on.
+``pathoc`` and ``pathod`` are perverse HTTP client and server applications
+designed to let you craft almost any conceivable HTTP request, including ones
+that creatively violate the standards.
+
 
 Documentation & Help
 --------------------
 
-Documentation, tutorials and distribution packages can be found on the
-mitmproxy website.
 
-|site|
+General information, tutorials, and precompiled binaries can be found on the mitmproxy
+and pathod websites.
 
-Installation Instructions are available in the docs.
+|mitmproxy_site| |pathod_site|
 
-|docs|
 
-You can join our developer chat on Slack.
+The latest documentation for mitmproxy is also available on ReadTheDocs.
+
+|mitmproxy_docs|
+
+
+Join our discussion forum on Discourse to ask questions, help
+each other solve problems, and come up with new ideas for the project.
+
+|mitmproxy_discourse|
+
+
+Join our developer chat on Slack if you would like to hack on mitmproxy itself.
 
 |slack|
 
-Features
---------
 
-- Intercept HTTP requests and responses and modify them on the fly.
-- Save complete HTTP conversations for later replay and analysis.
-- Replay the client-side of an HTTP conversations.
-- Replay HTTP responses of a previously recorded server.
-- Reverse proxy mode to forward traffic to a specified server.
-- Transparent proxy mode on OSX and Linux.
-- Make scripted changes to HTTP traffic using Python.
-- SSL certificates for interception are generated on the fly.
-- And much, much more.
+Installation
+------------
 
-``mitmproxy`` is tested and developed on OSX, Linux and OpenBSD.
-On Windows, only mitmdump is supported, which does not have a graphical user interface.
-
+The installation instructions are `here <http://docs.mitmproxy.org/en/stable/install.html>`_.
+If you want to contribute changes, keep on reading.
 
 
 Hacking
 -------
 
-To get started hacking on mitmproxy, make sure you have Python_ 2.7.x. with
-virtualenv_ installed (you can find installation instructions for virtualenv here_).
-Then do the following:
+To get started hacking on mitmproxy, make sure you have Python_ 3.5.x or above with
+virtualenv_ installed (you can find installation instructions for virtualenv
+`here <http://virtualenv.readthedocs.org/en/latest/>`_). Then do the following:
 
 .. code-block:: text
 
     git clone https://github.com/mitmproxy/mitmproxy.git
-    git clone https://github.com/mitmproxy/netlib.git
-    git clone https://github.com/mitmproxy/pathod.git
     cd mitmproxy
-    ./dev
+    ./dev.sh  # powershell .\dev.ps1 on Windows
 
 
 The *dev* script will create a virtualenv environment in a directory called
-"venv.mitmproxy", and install all of mitmproxy's development requirements, plus
-all optional modules. The primary mitmproxy components - mitmproxy, netlib and
-pathod - are all installed "editable", so any changes to the source in the git
-checkouts will be reflected live in the virtualenv.
+"venv", and install all mandatory and optional dependencies into it. The
+primary mitmproxy components - mitmproxy, netlib and pathod - are installed as
+"editable", so any changes to the source in the repository will be reflected
+live in the virtualenv.
 
 To confirm that you're up and running, activate the virtualenv, and run the
 mitmproxy test suite:
 
 .. code-block:: text
 
-    . ../venv.mitmproxy/bin/activate # ..\venv.mitmproxy\Scripts\activate.bat on Windows
-    py.test -n 4 --cov libmproxy
+    . venv/bin/activate  # venv\Scripts\activate on Windows
+    py.test
 
-Note that the main executables for the project - ``mitmdump``, ``mitmproxy`` and
-``mitmweb`` - are all created within the virtualenv. After activating the
-virtualenv, they will be on your $PATH, and you can run them like any other
-command:
+Note that the main executables for the project - ``mitmdump``, ``mitmproxy``,
+``mitmweb``, ``pathod``, and ``pathoc`` - are all created within the
+virtualenv. After activating the virtualenv, they will be on your $PATH, and
+you can run them like any other command:
 
 .. code-block:: text
 
@@ -92,18 +98,33 @@ requirements installed, and you can simply run the test suite:
 
 .. code-block:: text
 
-    py.test -n 4 --cov libmproxy
+    py.test
 
 Please ensure that all patches are accompanied by matching changes in the test
-suite. The project maintains 100% test coverage.
+suite. The project tries to maintain 100% test coverage.
+
+You can also use `tox` to run a full suite of tests in Python 2.7 and 3.5,
+including a quick test to check documentation and code linting.
+
+The following tox environments are relevant for local testing:
+
+.. code-block:: text
+
+    tox -e py27  # runs all tests with Python 2.7
+    tox -e py35  # runs all tests with Python 3.5
+    tox -e docs  # runs a does-it-compile check on the documentation
+    tox -e lint  # runs the linter for coding style checks
+
+We support Python 2.7 and 3.5, so please make sure all tests pass in both
+environments. Running `tox` ensures all necessary tests are executed.
 
 
-Docs
-----
+Documentation
+-------------
 
-The mitmproxy documentation is build using Sphinx_, which is installed automatically if you set up a development
-environment as described above.
-After installation, you can render the documentation like this:
+The mitmproxy documentation is build using Sphinx_, which is installed
+automatically if you set up a development environment as described above. After
+installation, you can render the documentation like this:
 
 .. code-block:: text
 
@@ -115,43 +136,68 @@ After installation, you can render the documentation like this:
 The last command invokes `sphinx-autobuild`_, which watches the Sphinx directory and rebuilds
 the documentation when a change is detected.
 
+Style
+-----
 
-.. |site| image:: https://img.shields.io/badge/https%3A%2F%2F-mitmproxy.org-blue.svg
+Keeping to a consistent code style throughout the project makes it easier to
+contribute and collaborate. Please stick to the guidelines in
+`PEP8`_ and the `Google Style Guide`_ unless there's a very
+good reason not to.
+
+This is automatically enforced on every PR. If we detect a linting error, the
+PR checks will fail and block merging. We are using this command to check for style compliance:
+
+.. code-block:: text
+
+    flake8 --jobs 8 --count mitmproxy netlib pathod examples test
+
+
+.. |mitmproxy_site| image:: https://shields.mitmproxy.org/api/https%3A%2F%2F-mitmproxy.org-blue.svg
     :target: https://mitmproxy.org/
     :alt: mitmproxy.org
 
-.. |docs| image:: https://readthedocs.org/projects/mitmproxy/badge/
+.. |pathod_site| image:: https://shields.mitmproxy.org/api/https%3A%2F%2F-pathod.net-blue.svg
+    :target: https://pathod.net/
+    :alt: pathod.net
+
+.. |mitmproxy_docs| image:: https://readthedocs.org/projects/mitmproxy/badge/
     :target: http://docs.mitmproxy.org/en/latest/
-    :alt: Documentation
+    :alt: mitmproxy documentation
+
+.. |mitmproxy_discourse| image:: https://shields.mitmproxy.org/api/https%3A%2F%2F-discourse.mitmproxy.org-orange.svg
+    :target: https://discourse.mitmproxy.org
+    :alt: Discourse: mitmproxy
 
 .. |slack| image:: http://slack.mitmproxy.org/badge.svg
     :target: http://slack.mitmproxy.org/
     :alt: Slack Developer Chat
 
-.. |travis| image:: https://img.shields.io/travis/mitmproxy/mitmproxy/master.svg
+.. |travis| image:: https://shields.mitmproxy.org/travis/mitmproxy/mitmproxy/master.svg?label=Travis%20build
     :target: https://travis-ci.org/mitmproxy/mitmproxy
-    :alt: Build Status
+    :alt: Travis Build Status
 
-.. |coveralls| image:: https://img.shields.io/coveralls/mitmproxy/mitmproxy/master.svg
-    :target: https://coveralls.io/r/mitmproxy/mitmproxy
+.. |appveyor| image:: https://shields.mitmproxy.org/appveyor/ci/mhils/mitmproxy/master.svg?label=Appveyor%20build
+    :target: https://ci.appveyor.com/project/mhils/mitmproxy
+    :alt: Appveyor Build Status
+
+.. |coverage| image:: https://codecov.io/gh/mitmproxy/mitmproxy/branch/master/graph/badge.svg
+    :target: https://codecov.io/gh/mitmproxy/mitmproxy
     :alt: Coverage Status
 
-.. |downloads| image:: https://img.shields.io/pypi/dm/mitmproxy.svg?color=orange
-    :target: https://pypi.python.org/pypi/mitmproxy
-    :alt: Downloads
-
-.. |latest-release| image:: https://img.shields.io/pypi/v/mitmproxy.svg
+.. |latest_release| image:: https://shields.mitmproxy.org/pypi/v/mitmproxy.svg
     :target: https://pypi.python.org/pypi/mitmproxy
     :alt: Latest Version
 
-.. |python-versions| image:: https://img.shields.io/pypi/pyversions/mitmproxy.svg
+.. |python_versions| image:: https://shields.mitmproxy.org/pypi/pyversions/mitmproxy.svg
     :target: https://pypi.python.org/pypi/mitmproxy
     :alt: Supported Python versions
 
 .. _Python: https://www.python.org/
-.. _virtualenv: https://virtualenv.pypa.io/en/latest/
-.. _here: https://virtualenv.pypa.io/en/latest/installation.html
+.. _virtualenv: http://virtualenv.readthedocs.org/en/latest/
 .. _autoenv: https://github.com/kennethreitz/autoenv
 .. _.env: https://github.com/mitmproxy/mitmproxy/blob/master/.env
 .. _Sphinx: http://sphinx-doc.org/
 .. _sphinx-autobuild: https://pypi.python.org/pypi/sphinx-autobuild
+.. _issue_tracker: https://github.com/mitmproxy/mitmproxy/issues
+.. _PEP8: https://www.python.org/dev/peps/pep-0008
+.. _Google Style Guide: https://google.github.io/styleguide/pyguide.html

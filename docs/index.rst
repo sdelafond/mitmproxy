@@ -52,7 +52,8 @@
     :caption: Scripting
 
     scripting/inlinescripts
-    scripting/libmproxy
+    dev/models
+    scripting/mitmproxy
 
 
 .. toctree::
@@ -62,6 +63,17 @@
     tutorials/30second
     tutorials/gamecenter
     tutorials/transparent-dhcp
+
+
+.. toctree::
+    :hidden:
+    :caption: Pathod & Pathoc
+
+    pathod/intro
+    pathod/language
+    pathod/library
+    pathod/test
+
 
 .. toctree::
     :hidden:
@@ -73,11 +85,9 @@
     dev/protocols
     dev/proxy
     dev/exceptions
-    dev/models
 
 ..  Indices and tables
     ==================
 
     * :ref:`genindex`
     * :ref:`modindex`
-

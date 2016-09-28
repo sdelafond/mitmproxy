@@ -1,8 +1,8 @@
 
 var conf = {
     src: "src/",
-    dist: "../libmproxy/web",
-    static: "../libmproxy/web/static",
+    dist: "../mitmproxy/web",
+    static: "../mitmproxy/web/static",
     js: {
         // Don't package these in the vendor distribution
         vendor_excludes: [
@@ -10,9 +10,8 @@ var conf = {
         ],
         // Package these as well as the dependencies
         vendor_includes: [
-            "react/addons"
         ],
-        app: 'src/js/app.js',
+        app: 'src/js/app',
         eslint: ["src/js/**/*.js", "!src/js/filt/filt.js"]
     },
     css: {

@@ -65,7 +65,7 @@ See http://windows.microsoft.com/en-ca/windows/import-export-certificates-privat
 Windows (automated)
 ^^^^^^^^^^^^^^^^^^^
 
->>> certutil.exe -importpfx mitmproxy-ca-cert.p12
+>>> certutil.exe -importpfx Root mitmproxy-ca-cert.p12
 
 See also: https://technet.microsoft.com/en-us/library/cc732443.aspx
 
@@ -175,10 +175,21 @@ no such file exists, it will be generated automatically.
 Using a client side certificate
 -------------------------------
 
-You can use a client certificate by passing the ``--client-certs DIRECTORY`` option to mitmproxy.
+You can use a client certificate by passing the ``--client-certs DIRECTORY|FILE``
+option to mitmproxy. Using a directory allows certs to be selected based on
+hostname, while using a filename allows a single specific certificate to be used for
+all SSL connections. Certificate files must be in the PEM format and should
+contain both the unencrypted private key and the certificate.
+
+Multiple certs by Hostname
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you've specified a directory to ``--client-certs``, then the following
+behavior will be taken:
+
 If you visit example.org, mitmproxy looks for a file named ``example.org.pem`` in the specified
-directory and uses this as the client cert. The certificate file needs to be in the PEM format and
-should contain both the unencrypted private key and the certificate.
+directory and uses this as the client cert.
+
 
 
 .. _Certificate Pinning: http://security.stackexchange.com/questions/29988/what-is-certificate-pinning/

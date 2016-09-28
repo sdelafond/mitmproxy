@@ -11,10 +11,15 @@ Installation On Ubuntu
 Ubuntu comes with Python but we need to install pip, python-dev and several libraries.
 This was tested on a fully patched installation of Ubuntu 14.04.
 
->>> sudo apt-get install python-pip python-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libjpeg8-dev zlib1g-dev
->>> sudo pip install mitmproxy
+.. code:: bash
+
+   sudo apt-get install python-pip python-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libjpeg8-dev zlib1g-dev g++
+   sudo pip install mitmproxy  # or pip install --user mitmproxy
 
 Once installation is complete you can run :ref:`mitmproxy` or :ref:`mitmdump` from a terminal.
+
+On **Ubuntu 12.04** (and other systems with an outdated version of pip),
+you may need to update pip using ``pip install -U pip`` before installing mitmproxy.
 
 Installation From Source (Ubuntu)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -23,6 +28,31 @@ If you would like to install mitmproxy directly from the master branch on GitHub
 get set up to contribute to the project, install the dependencies as you would for a regular
 mitmproxy installation (see :ref:`install-ubuntu`).
 Then see the Hacking_ section of the README on GitHub.
+
+.. _install-fedora:
+
+Installation On Fedora
+----------------------
+
+Fedora comes with Python but we need to install pip, python-dev and several libraries.
+This was tested on a fully patched installation of Fedora 23.
+
+.. code:: bash
+
+   sudo dnf install -y python-pip python-devel libffi-devel openssl-devel libxml2-devel libxslt-devel libpng-devel libjpeg-devel
+   sudo pip install mitmproxy  # or pip install --user mitmproxy
+
+Once installation is complete you can run :ref:`mitmproxy` or :ref:`mitmdump` from a terminal.
+
+
+.. _install-arch:
+
+Installation On Arch Linux
+--------------------------
+
+mitmproxy has been added into the [community] repository. Use pacman to install it:
+
+>>> sudo pacman -S mitmproxy
 
 
 
@@ -73,7 +103,9 @@ Installation On Windows
 
 First, install the latest version of Python 2.7 from the `Python website`_.
 If you already have an older version of Python 2.7 installed, make sure to install pip_
-(pip is included in Python 2.7.9+ by default).
+(pip is included in Python 2.7.9+ by default). If pip aborts with an error, make sure you are using the current version of pip.
+
+>>> python -m pip install --upgrade pip
 
 Next, add Python and the Python Scripts directory to your **PATH** variable.
 You can do this easily by running the following in powershell:

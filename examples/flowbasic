@@ -8,8 +8,8 @@
     Note that request and response messages are not automatically replied to,
     so we need to implement handlers to do this.
 """
-from libmproxy import flow
-from libmproxy.proxy import ProxyServer, ProxyConfig
+from mitmproxy import flow, controller, options
+from mitmproxy.proxy import ProxyServer, ProxyConfig
 
 
 class MyMaster(flow.FlowMaster):
@@ -19,26 +19,25 @@ class MyMaster(flow.FlowMaster):
         except KeyboardInterrupt:
             self.shutdown()
 
-    def handle_request(self, f):
-        f = flow.FlowMaster.handle_request(self, f)
-        if f:
-            f.reply()
-        return f
+    @controller.handler
+    def request(self, f):
+        print("request", f)
 
-    def handle_response(self, f):
-        f = flow.FlowMaster.handle_response(self, f)
-        if f:
-            f.reply()
-        print(f)
-        return f
+    @controller.handler
+    def response(self, f):
+        print("response", f)
 
+    @controller.handler
+    def error(self, f):
+        print("error", f)
 
-config = ProxyConfig(
-    port=8080,
-    # use ~/.mitmproxy/mitmproxy-ca.pem as default CA file.
-    cadir="~/.mitmproxy/"
-)
+    @controller.handler
+    def log(self, l):
+        print("log", l.msg)
+
+opts = options.Options(cadir="~/.mitmproxy/")
+config = ProxyConfig(opts)
 state = flow.State()
 server = ProxyServer(config)
-m = MyMaster(server, state)
+m = MyMaster(opts, server, state)
 m.run()

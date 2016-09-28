@@ -5,16 +5,34 @@
 
 .flow-detail {
     width: 100%;
-    overflow-x: auto;
-    overflow-y: scroll;
+    overflow:hidden;
+    display: flex;
+    flex-direction: column;
 
     nav {
         background-color: #F2F2F2;
     }
 
     section {
-        padding: 5px 12px;
+        display: flex;
+        flex-direction: column;
+        >article{
+            overflow: auto;
+            padding: 5px 12px 0;
+        }
+        >footer {
+            box-shadow: 0 0 3px gray;
+            padding: 2px;
+            margin: 0;
+            height:23px;
+        }
     }
+
+    section.detail, section.error{
+        overflow: auto;
+        padding: 5px 12px 0;
+    }
+
 
     .first-line {
         .monospace();
@@ -26,24 +44,30 @@
         word-break: break-all;
         max-height: 100px;
         overflow-y: auto;
+
+        .inline-input.editable {
+            border-color: rgba(255,255,255,0.5);
+        }
     }
     .request-line {
         margin-bottom: 2px;
     }
-    /*.request .response-line,
-    .response .request-line {
-        opacity: 0.7;
-    }*/
 
     hr {
         margin: 0 0 5px;
     }
-
 }
 
+
 .inline-input {
-    margin: 0 -5px;
-    padding: 0 5px;
+    display: inline;
+    margin: 0 -3px;
+    padding: 0 3px;
+
+    border: solid transparent 1px;
+    &.editable {
+        border-color: #ccc;
+    }
 
     &[contenteditable] {
 
@@ -58,8 +82,9 @@
     }
 }
 
-.view-options {
-    margin-top: 10px;
+.view-all-content-btn{
+    float: right;
+    margin-bottom: 12px;
 }
 
 .flow-detail table {
@@ -96,10 +121,22 @@
     }
     .header-name {
         width: 33%;
-        padding-right: 1em;
     }
     .header-value {
 
+    }
+
+    // This exists so that you can copy
+    // and paste headers out of mitmweb.
+    .header-colon {
+        position: absolute;
+        opacity: 0;
+    }
+
+    .inline-input {
+        display: inline-block;
+        width: 100%;
+        height: 100%;
     }
 }
 
