@@ -22,6 +22,7 @@ from mitmproxy import contentviews
 from mitmproxy import controller
 from mitmproxy import exceptions
 from mitmproxy import flow
+from mitmproxy import flowfilter
 from mitmproxy import utils
 import mitmproxy.options
 from mitmproxy.console import flowlist
@@ -34,7 +35,7 @@ from mitmproxy.console import palettes
 from mitmproxy.console import signals
 from mitmproxy.console import statusbar
 from mitmproxy.console import window
-from mitmproxy.filt import FMarked
+from mitmproxy.flowfilter import FMarked
 from netlib import tcp, strutils
 
 EVENTLOG_SIZE = 500
@@ -125,7 +126,7 @@ class ConsoleState(flow.State):
         self.set_focus(self.focus)
         return ret
 
-    def get_nearest_matching_flow(self, flow, filt):
+    def get_nearest_matching_flow(self, flow, flt):
         fidx = self.view.index(flow)
         dist = 1
 
@@ -134,9 +135,9 @@ class ConsoleState(flow.State):
             fprev, _ = self.get_from_pos(fidx - dist)
             fnext, _ = self.get_from_pos(fidx + dist)
 
-            if fprev and fprev.match(filt):
+            if fprev and flowfilter.match(flt, fprev):
                 return fprev
-            elif fnext and fnext.match(filt):
+            elif fnext and flowfilter.match(flt, fnext):
                 return fnext
 
             dist += 1
@@ -635,14 +636,6 @@ class ConsoleMaster(flow.FlowMaster):
     def edit_scripts(self, scripts):
         self.options.scripts = [x[0] for x in scripts]
 
-    def stop_client_playback_prompt(self, a):
-        if a != "n":
-            self.stop_client_playback()
-
-    def stop_server_playback_prompt(self, a):
-        if a != "n":
-            self.stop_server_playback()
-
     def quit(self, a):
         if a != "n":
             raise urwid.ExitMainLoop
@@ -677,14 +670,14 @@ class ConsoleMaster(flow.FlowMaster):
     def process_flow(self, f):
         should_intercept = any(
             [
-                self.state.intercept and f.match(self.state.intercept) and not f.request.is_replay,
+                self.state.intercept and flowfilter.match(self.state.intercept, f) and not f.request.is_replay,
                 f.intercepted,
             ]
         )
         if should_intercept:
             f.intercept(self)
         signals.flowlist_change.send(self)
-        signals.flow_change.send(self, flow = f)
+        signals.flow_change.send(self, flow=f)
 
     def clear_events(self):
         self.logbuffer[:] = []
@@ -692,24 +685,18 @@ class ConsoleMaster(flow.FlowMaster):
     # Handlers
     @controller.handler
     def error(self, f):
-        f = flow.FlowMaster.error(self, f)
-        if f:
-            self.process_flow(f)
-        return f
+        super(ConsoleMaster, self).error(f)
+        self.process_flow(f)
 
     @controller.handler
     def request(self, f):
-        f = flow.FlowMaster.request(self, f)
-        if f:
-            self.process_flow(f)
-        return f
+        super(ConsoleMaster, self).request(f)
+        self.process_flow(f)
 
     @controller.handler
     def response(self, f):
-        f = flow.FlowMaster.response(self, f)
-        if f:
-            self.process_flow(f)
-        return f
+        super(ConsoleMaster, self).response(f)
+        self.process_flow(f)
 
     @controller.handler
     def tcp_message(self, f):

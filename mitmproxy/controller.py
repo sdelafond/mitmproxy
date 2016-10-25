@@ -19,47 +19,68 @@ Events = frozenset([
     "serverconnect",
     "serverdisconnect",
 
-    "tcp_open",
+    "tcp_start",
     "tcp_message",
     "tcp_error",
-    "tcp_close",
+    "tcp_end",
 
     "request",
+    "requestheaders",
     "response",
     "responseheaders",
+    "error",
 
-    "websockets_handshake",
+    "websocket_handshake",
 
     "next_layer",
 
-    "error",
-    "log",
-
-    "start",
     "configure",
     "done",
+    "log",
+    "start",
     "tick",
 ])
 
 
+class LogEntry(object):
+    def __init__(self, msg, level):
+        self.msg = msg
+        self.level = level
+
+
 class Log(object):
+    """
+        The central logger, exposed to scripts as mitmproxy.ctx.log.
+    """
     def __init__(self, master):
         self.master = master
 
-    def __call__(self, text, level="info"):
-        self.master.add_log(text, level)
-
     def debug(self, txt):
+        """
+            Log with level debug.
+        """
         self(txt, "debug")
 
     def info(self, txt):
+        """
+            Log with level info.
+        """
         self(txt, "info")
 
     def warn(self, txt):
+        """
+            Log with level warn.
+        """
         self(txt, "warn")
 
     def error(self, txt):
+        """
+            Log with level error.
+        """
         self(txt, "error")
+
+    def __call__(self, text, level="info"):
+        self.master.add_log(text, level)
 
 
 class Master(object):
@@ -89,10 +110,16 @@ class Master(object):
             mitmproxy_ctx.master = None
             mitmproxy_ctx.log = None
 
-    def add_log(self, e, level="info"):
+    def tell(self, mtype, m):
+        m.reply = DummyReply()
+        self.event_queue.put((mtype, m))
+
+    def add_log(self, e, level):
         """
             level: debug, info, warn, error
         """
+        with self.handlecontext():
+            self.addons("log", LogEntry(e, level))
 
     def add_server(self, server):
         # We give a Channel to the server which can be used to communicate with the master
