@@ -6,6 +6,7 @@ import sys
 from typing import Optional  # noqa
 
 import netlib.exceptions
+from netlib import http
 from mitmproxy import controller
 from mitmproxy import exceptions
 from mitmproxy import models
@@ -18,6 +19,7 @@ from mitmproxy.protocol import http_replay
 def event_sequence(f):
     if isinstance(f, models.HTTPFlow):
         if f.request:
+            yield "requestheaders", f
             yield "request", f
         if f.response:
             yield "responseheaders", f
@@ -28,13 +30,13 @@ def event_sequence(f):
         messages = f.messages
         f.messages = []
         f.reply = controller.DummyReply()
-        yield "tcp_open", f
+        yield "tcp_start", f
         while messages:
             f.messages.append(messages.pop(0))
             yield "tcp_message", f
         if f.error:
             yield "tcp_error", f
-        yield "tcp_close", f
+        yield "tcp_end", f
     else:
         raise NotImplementedError
 
@@ -82,7 +84,7 @@ class FlowMaster(controller.Master):
         s = models.ServerConnection.make_dummy((host, port))
 
         f = models.HTTPFlow(c, s)
-        headers = models.Headers()
+        headers = http.Headers()
 
         req = models.HTTPRequest(
             "absolute",
@@ -189,7 +191,7 @@ class FlowMaster(controller.Master):
 
     @controller.handler
     def log(self, l):
-        self.add_log(l.msg, l.level)
+        pass
 
     @controller.handler
     def clientconnect(self, root_layer):
@@ -214,6 +216,10 @@ class FlowMaster(controller.Master):
     @controller.handler
     def error(self, f):
         self.state.update_flow(f)
+
+    @controller.handler
+    def requestheaders(self, f):
+        pass
 
     @controller.handler
     def request(self, f):
@@ -246,7 +252,7 @@ class FlowMaster(controller.Master):
         self.state.update_flow(f)
 
     @controller.handler
-    def websockets_handshake(self, f):
+    def websocket_handshake(self, f):
         pass
 
     def handle_intercept(self, f):
@@ -256,7 +262,7 @@ class FlowMaster(controller.Master):
         self.state.update_flow(f)
 
     @controller.handler
-    def tcp_open(self, flow):
+    def tcp_start(self, flow):
         # TODO: This would break mitmproxy currently.
         # self.state.add_flow(flow)
         pass
@@ -270,5 +276,5 @@ class FlowMaster(controller.Master):
         pass
 
     @controller.handler
-    def tcp_close(self, flow):
+    def tcp_end(self, flow):
         pass

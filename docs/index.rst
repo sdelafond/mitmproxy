@@ -51,9 +51,9 @@
     :hidden:
     :caption: Scripting
 
-    scripting/inlinescripts
-    dev/models
-    scripting/mitmproxy
+    scripting/overview
+    scripting/events
+    scripting/api
 
 
 .. toctree::
@@ -82,9 +82,6 @@
     dev/architecture
     dev/testing
     dev/sslkeylogfile
-    dev/protocols
-    dev/proxy
-    dev/exceptions
 
 ..  Indices and tables
     ==================
