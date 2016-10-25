@@ -1,0 +1,21 @@
+From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
+Date: Tue, 25 Oct 2016 09:35:12 +0200
+Subject: Refer to examples/ path in a way that's compatible with pbuilder
+
+---
+ test/mitmproxy/test_examples.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/mitmproxy/test_examples.py b/test/mitmproxy/test_examples.py
+index 483cb22..9984106 100644
+--- a/test/mitmproxy/test_examples.py
++++ b/test/mitmproxy/test_examples.py
+@@ -17,7 +17,7 @@ from netlib.http import cookies
+ 
+ from . import tutils, mastertest
+ 
+-example_dir = netlib.utils.Data(__name__).push("../../examples")
++example_dir = netlib.utils.Data(__name__).push("../../../../../examples")
+ 
+ 
+ class ScriptError(Exception):

@@ -1,10 +1,18 @@
 From: Alex Chernyakhovsky <achernya@mit\.edu>
 Date: Tue, 17 Jun 2014 10:14:47 +0200
-Forwarded: https://github.com/mitmproxy/mitmproxy/issues/289
+Subject: manpage
 
 diff a/doc-src/mitmproxy.1  b/doc-src/mitmproxy.1
---- /dev/null	2014-06-11 21:39:07.580005355 -0400
-+++ a/doc-src/mitmproxy.1	2014-06-16 23:20:29.832256745 -0400
+---
+ doc-src/mitmproxy.1 | 233 ++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 233 insertions(+)
+ create mode 100644 doc-src/mitmproxy.1
+
+diff --git a/doc-src/mitmproxy.1 b/doc-src/mitmproxy.1
+new file mode 100644
+index 0000000..6a83204
+--- /dev/null
++++ b/doc-src/mitmproxy.1
 @@ -0,0 +1,233 @@
 +.\" generated with Ronn/v0.7.3
 +.\" http://github.com/rtomayko/ronn/tree/0.7.3
