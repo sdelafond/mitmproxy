@@ -3,5 +3,13 @@
 export PYBUILD_NAME=mitmproxy
 export PYBUILD_TEST_ARGS="-k-TestServerIPv6 -k-TestServerCurrentCipher -k-TestServerCipherList"
 
+MAN_PAGES := $(shell cat debian/mitmproxy.manpages)
+
 %:
 	dh $@ --with python2 --buildsystem=pybuild
+
+override_dh_installman: $(MAN_PAGES)
+	dh_installman
+
+$(MAN_PAGES): %: %.md
+	pandoc -s -t man -o $@ $<

@@ -3,6 +3,7 @@ Section: net
 Priority: optional
 Maintainer: Sebastien Delafond <seb@debian.org>
 Build-Depends: debhelper (>= 9), dh-python, libssl-dev, python-dev,
+ pandoc,
  python-autopep8,
  python-certifi,
  python-construct (>= 2.5.2), python-construct (<< 2.6),
