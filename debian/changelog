@@ -1,3 +1,9 @@
+mitmproxy (0.18.2-3) unstable; urgency=medium
+
+  * Add Homepage to debian/control (Closes: #844203)
+
+ -- Sebastien Delafond <seb@debian.org>  Sun, 13 Nov 2016 14:25:45 +0100
+
 mitmproxy (0.18.2-2) unstable; urgency=medium
 
   * Dependencies: 2016.9.19 for python-html2text is actually OK (Closes: #844060)
