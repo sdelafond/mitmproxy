@@ -1,3 +1,10 @@
+mitmproxy (0.18.2-4) unstable; urgency=medium
+
+  * Relax python-passlib versioned dependencies, as the entire test suite
+    passes with python-passlib 1.7.0-1 (Closes: #846850)
+
+ -- Sébastien Delafond <sdelafond@gmail.com>  Sat, 10 Dec 2016 16:07:57 +0100
+
 mitmproxy (0.18.2-3) unstable; urgency=medium
 
   * Add Homepage to debian/control (Closes: #844203)
