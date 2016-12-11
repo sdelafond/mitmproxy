@@ -39,8 +39,8 @@ Build-Depends: debhelper (>= 9), dh-python, libssl-dev, python-dev,
  python-jsbeautifier (>= 1.6.3), python-jsbeautifier (<< 1.7),
  python-tz
 Standards-Version: 3.9.8
-Vcs-Git: git://anonscm.debian.org/collab-maint/mitmproxy.git
-Vcs-Browser: http://anonscm.debian.org/git/collab-maint/mitmproxy.git
+Vcs-Git: https://anonscm.debian.org/collab-maint/mitmproxy.git
+Vcs-Browser: https://anonscm.debian.org/git/collab-maint/mitmproxy.git
 Homepage: https://mitmproxy.org
 
 Package: mitmproxy
