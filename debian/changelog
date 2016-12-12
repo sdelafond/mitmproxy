@@ -1,3 +1,21 @@
+mitmproxy (0.18.2-5) unstable; urgency=medium
+
+  [ Carlos Maddela ]
+  * Update copyright file to machine-readable format.
+  * Show how we derive our upstream tarballs via watch and copyright files.
+  * Update Standards-Version to 3.9.8.
+  * Clean up mitmproxy.egg-info.
+  * Use packaged version of Font Awesome in place of those excluded from upstream.
+  * Prevent chrome-devtools LICENSE from being installed in undesired location.
+  * Add more licensing details to copyright file.
+  * Install examples via dh_installexamples instead of dh_installdocs.
+  * Updated mitmproxy man page. (Closes: #806635, #812388)
+  * Created man pages for remaining binaries.
+  * Update Vcs-Git and Vcs-Browser to use secure protocols.
+  * Override source-is-missing Lintian errors.
+
+ -- Sebastien Delafond <seb@debian.org>  Mon, 12 Dec 2016 10:03:38 +0100
+
 mitmproxy (0.18.2-4) unstable; urgency=medium
 
   * Relax python-passlib versioned dependencies, as the entire test suite
