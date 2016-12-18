@@ -1,3 +1,9 @@
+mitmproxy (0.18.2-6) unstable; urgency=medium
+
+  * Remove upper-bounds on all versioned dependencies (Closes: #848562)
+
+ -- Sebastien Delafond <seb@debian.org>  Sun, 18 Dec 2016 13:43:09 +0100
+
 mitmproxy (0.18.2-5) unstable; urgency=medium
 
   [ Carlos Maddela ]
