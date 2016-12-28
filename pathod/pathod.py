@@ -1,20 +1,21 @@
-from __future__ import print_function
 import copy
 import logging
 import os
 import sys
 import threading
 
-from netlib import tcp
-from netlib import certutils
-from netlib import websockets
-from netlib import version
+from mitmproxy.net import tcp
+from mitmproxy import certs as mcerts
+from mitmproxy.net import websockets
+from mitmproxy import version
 
-from six.moves import urllib
-from netlib.exceptions import HttpException, HttpReadDisconnect, TcpTimeout, TcpDisconnect, \
-    TlsException
+import urllib
+from mitmproxy import exceptions
 
-from . import language, utils, log, protocols
+from pathod import language
+from pathod import utils
+from pathod import log
+from pathod import protocols
 
 
 DEFAULT_CERT_DOMAIN = b"pathod.net"
@@ -30,7 +31,7 @@ class PathodError(Exception):
     pass
 
 
-class SSLOptions(object):
+class SSLOptions:
     def __init__(
         self,
         confdir=CONFDIR,
@@ -53,7 +54,7 @@ class SSLOptions(object):
         self.ssl_options = ssl_options
         self.ciphers = ciphers
         self.alpn_select = alpn_select
-        self.certstore = certutils.CertStore.from_store(
+        self.certstore = mcerts.CertStore.from_store(
             os.path.expanduser(confdir),
             CERTSTORE_BASENAME
         )
@@ -129,9 +130,9 @@ class PathodHandler(tcp.BaseHandler):
         with logger.ctx() as lg:
             try:
                 req = self.protocol.read_request(self.rfile)
-            except HttpReadDisconnect:
+            except exceptions.HttpReadDisconnect:
                 return None, None
-            except HttpException as s:
+            except exceptions.HttpException as s:
                 s = str(s)
                 lg(s)
                 return None, dict(type="error", msg=s)
@@ -143,6 +144,7 @@ class PathodHandler(tcp.BaseHandler):
             path = req.path
             http_version = req.http_version
             headers = req.headers
+            first_line_format = req.first_line_format
 
             clientcert = None
             if self.clientcert:
@@ -166,6 +168,7 @@ class PathodHandler(tcp.BaseHandler):
                     sni=self.sni,
                     remote_address=self.address(),
                     clientcert=clientcert,
+                    first_line_format=first_line_format
                 ),
                 cipher=None,
             )
@@ -253,7 +256,7 @@ class PathodHandler(tcp.BaseHandler):
                     options=self.server.ssloptions.ssl_options,
                     alpn_select=self.server.ssloptions.alpn_select,
                 )
-            except TlsException as v:
+            except exceptions.TlsException as v:
                 s = str(v)
                 self.server.add_log(
                     dict(
@@ -385,7 +388,7 @@ class Pathod(tcp.TCPServer):
         try:
             h.handle()
             h.finish()
-        except TcpDisconnect:  # pragma: no cover
+        except exceptions.TcpDisconnect:  # pragma: no cover
             log.write_raw(self.logfp, "Disconnect")
             self.add_log(
                 dict(
@@ -394,7 +397,7 @@ class Pathod(tcp.TCPServer):
                 )
             )
             return
-        except TcpTimeout:
+        except exceptions.TcpTimeout:
             log.write_raw(self.logfp, "Timeout")
             self.add_log(
                 dict(

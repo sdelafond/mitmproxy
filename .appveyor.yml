@@ -7,8 +7,9 @@ environment:
   matrix:
     - PYTHON: "C:\\Python35"
       TOXENV: "py35"
-    - PYTHON: "C:\\Python27"
-      TOXENV: "py27"
+    # TODO: ENABLE WHEN AVAILABLE
+    # - PYTHON: "C:\\Python36"
+    #   TOXENV: "py36"
 
   SNAPSHOT_HOST:
     secure: NeTo57s2rJhCd/mjKHetXVxCFd3uhr8txnjnAXD1tUI=
@@ -18,6 +19,8 @@ environment:
     secure: 6yBwmO5gv4vAwoFYII8qjQ==
   SNAPSHOT_PASS:
     secure: LPjrtFrWxYhOVGXzfPRV1GjtZE/wHoKq9m/PI6hSalfysUK5p2DxTG9uHlb4Q9qV
+  RTOOL_KEY:
+    secure: 0a+UUNbA+JjquyAbda4fd0JmiwL06AdG6torRPdCvbPDbKHnaW/BHHp1nRPytOKM
 
 install:
   - "SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%"
@@ -25,21 +28,48 @@ install:
   - "pip install -U tox"
 
 test_script:
-  - ps: "tox -- --cov netlib --cov mitmproxy --cov pathod -v"
+  - ps: "tox -- --cov mitmproxy --cov pathod -v"
+  - ps: |
+      $Env:VERSION = $(python mitmproxy/version.py)
+      $Env:SKIP_MITMPROXY = "python -c `"print('skip mitmproxy')`""
+      tox -e wheel
+      tox -e rtool -- bdist
+
+  - ps: |
+      if(
+        ($Env:TOXENV -match "py35") -and !$Env:APPVEYOR_PULL_REQUEST_NUMBER -and
+        (($Env:APPVEYOR_REPO_BRANCH -In ("master", "pyinstaller")) -or ($Env:APPVEYOR_REPO_TAG -match "true"))
+      ) {
+        tox -e rtool -- decrypt release\installbuilder\license.xml.enc release\installbuilder\license.xml
+        if (!(Test-Path "C:\projects\mitmproxy\release\installbuilder-installer.exe")) {
+          "Download InstallBuilder..."
+          (New-Object System.Net.WebClient).DownloadFile(
+            "https://installbuilder.bitrock.com/installbuilder-enterprise-16.11.1-windows-installer.exe",
+            "C:\projects\mitmproxy\release\installbuilder-installer.exe"
+          )
+        }
+        Start-Process "C:\projects\mitmproxy\release\installbuilder-installer.exe" "--mode unattended --unattendedmodeui none" -Wait
+        & 'C:\Program Files (x86)\BitRock InstallBuilder Enterprise 16.11.1\bin\builder-cli.exe' `
+          build `
+          .\release\installbuilder\mitmproxy.xml `
+          windows `
+          --license .\release\installbuilder\license.xml `
+          --setvars project.version=$Env:VERSION `
+          --verbose
+      }
 
 deploy_script:
+  # we build binaries on every run, but we only upload them for master snapshots or tags.
   ps: |
     if(
       ($Env:TOXENV -match "py35") -and
-      (($Env:APPVEYOR_REPO_BRANCH -match "master") -or ($Env:APPVEYOR_REPO_TAG -match "true"))
-      ) {
-      pip install -U virtualenv
-      .\dev.ps1
-      cmd /c "python -u .\release\rtool.py bdist 2>&1"
-      python -u .\release\rtool.py upload-snapshot --bdist --wheel
+      (($Env:APPVEYOR_REPO_BRANCH -In ("master", "pyinstaller")) -or ($Env:APPVEYOR_REPO_TAG -match "true"))
+    ) {
+      tox -e rtool -- upload-snapshot --bdist --wheel --installer
     }
 
 cache:
+  - C:\projects\mitmproxy\release\installbuilder-installer.exe -> .appveyor.yml
   - C:\Users\appveyor\AppData\Local\pip\cache
 
 notifications:

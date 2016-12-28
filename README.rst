@@ -3,8 +3,7 @@ mitmproxy
 
 |travis| |appveyor| |coverage| |latest_release| |python_versions|
 
-This repository contains the **mitmproxy** and **pathod** projects, as well as
-their shared networking library, **netlib**.
+This repository contains the **mitmproxy** and **pathod** projects.
 
 ``mitmproxy`` is an interactive, SSL-capable intercepting proxy with a console
 interface.
@@ -23,8 +22,7 @@ Documentation & Help
 General information, tutorials, and precompiled binaries can be found on the mitmproxy
 and pathod websites.
 
-|mitmproxy_site| |pathod_site|
-
+|mitmproxy_site|
 
 The latest documentation for mitmproxy is also available on ReadTheDocs.
 
@@ -45,7 +43,7 @@ Join our developer chat on Slack if you would like to hack on mitmproxy itself.
 Installation
 ------------
 
-The installation instructions are `here <http://docs.mitmproxy.org/en/stable/install.html>`_.
+The installation instructions are `here <http://docs.mitmproxy.org/en/stable/install.html>`__.
 If you want to contribute changes, keep on reading.
 
 
@@ -54,7 +52,7 @@ Hacking
 
 To get started hacking on mitmproxy, make sure you have Python_ 3.5.x or above with
 virtualenv_ installed (you can find installation instructions for virtualenv
-`here <http://virtualenv.readthedocs.org/en/latest/>`_). Then do the following:
+`here <http://virtualenv.readthedocs.org/en/latest/>`__). Then do the following:
 
 .. code-block:: text
 
@@ -65,7 +63,7 @@ virtualenv_ installed (you can find installation instructions for virtualenv
 
 The *dev* script will create a virtualenv environment in a directory called
 "venv", and install all mandatory and optional dependencies into it. The
-primary mitmproxy components - mitmproxy, netlib and pathod - are installed as
+primary mitmproxy components - mitmproxy and pathod - are installed as
 "editable", so any changes to the source in the repository will be reflected
 live in the virtualenv.
 
@@ -103,20 +101,16 @@ requirements installed, and you can simply run the test suite:
 Please ensure that all patches are accompanied by matching changes in the test
 suite. The project tries to maintain 100% test coverage.
 
-You can also use `tox` to run a full suite of tests in Python 2.7 and 3.5,
-including a quick test to check documentation and code linting.
+You can also use `tox` to run the full suite of tests, including a quick test
+to check documentation and code linting.
 
 The following tox environments are relevant for local testing:
 
 .. code-block:: text
 
-    tox -e py27  # runs all tests with Python 2.7
     tox -e py35  # runs all tests with Python 3.5
     tox -e docs  # runs a does-it-compile check on the documentation
     tox -e lint  # runs the linter for coding style checks
-
-We support Python 2.7 and 3.5, so please make sure all tests pass in both
-environments. Running `tox` ensures all necessary tests are executed.
 
 
 Documentation
@@ -145,20 +139,17 @@ contribute and collaborate. Please stick to the guidelines in
 good reason not to.
 
 This is automatically enforced on every PR. If we detect a linting error, the
-PR checks will fail and block merging. We are using this command to check for style compliance:
+PR checks will fail and block merging. You can run our lint checks yourself
+with the following command:
 
 .. code-block:: text
 
-    flake8 --jobs 8 --count mitmproxy netlib pathod examples test
+    tox -e lint
 
 
 .. |mitmproxy_site| image:: https://shields.mitmproxy.org/api/https%3A%2F%2F-mitmproxy.org-blue.svg
     :target: https://mitmproxy.org/
     :alt: mitmproxy.org
-
-.. |pathod_site| image:: https://shields.mitmproxy.org/api/https%3A%2F%2F-pathod.net-blue.svg
-    :target: https://pathod.net/
-    :alt: pathod.net
 
 .. |mitmproxy_docs| image:: https://readthedocs.org/projects/mitmproxy/badge/
     :target: http://docs.mitmproxy.org/en/latest/
@@ -198,6 +189,5 @@ PR checks will fail and block merging. We are using this command to check for st
 .. _.env: https://github.com/mitmproxy/mitmproxy/blob/master/.env
 .. _Sphinx: http://sphinx-doc.org/
 .. _sphinx-autobuild: https://pypi.python.org/pypi/sphinx-autobuild
-.. _issue_tracker: https://github.com/mitmproxy/mitmproxy/issues
 .. _PEP8: https://www.python.org/dev/peps/pep-0008
 .. _Google Style Guide: https://google.github.io/styleguide/pyguide.html

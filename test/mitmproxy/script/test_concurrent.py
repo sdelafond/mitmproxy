@@ -1,10 +1,14 @@
-from test.mitmproxy import tutils, mastertest
+from mitmproxy.test import tflow
+from mitmproxy.test import tutils
+from mitmproxy.test import taddons
+
 from mitmproxy import controller
-from mitmproxy.builtins import script
-from mitmproxy import options
-from mitmproxy.flow import master
-from mitmproxy.flow import state
+from mitmproxy.addons import script
+
 import time
+
+from test.mitmproxy import mastertest
+from test.mitmproxy import tutils as ttutils
 
 
 class Thing:
@@ -14,33 +18,31 @@ class Thing:
 
 
 class TestConcurrent(mastertest.MasterTest):
-    @tutils.skip_appveyor
+    @ttutils.skip_appveyor
     def test_concurrent(self):
-        s = state.State()
-        m = master.FlowMaster(options.Options(), None, s)
-        sc = script.Script(
-            tutils.test_data.path(
-                "data/addonscripts/concurrent_decorator.py"
+        with taddons.context() as tctx:
+            sc = script.Script(
+                tutils.test_data.path(
+                    "mitmproxy/data/addonscripts/concurrent_decorator.py"
+                )
             )
-        )
-        m.addons.add(sc)
-        f1, f2 = tutils.tflow(), tutils.tflow()
-        m.request(f1)
-        m.request(f2)
-        start = time.time()
-        while time.time() - start < 5:
-            if f1.reply.state == f2.reply.state == "committed":
-                return
-        raise ValueError("Script never acked")
+            sc.start()
+
+            f1, f2 = tflow.tflow(), tflow.tflow()
+            tctx.cycle(sc, f1)
+            tctx.cycle(sc, f2)
+            start = time.time()
+            while time.time() - start < 5:
+                if f1.reply.state == f2.reply.state == "committed":
+                    return
+            raise ValueError("Script never acked")
 
     def test_concurrent_err(self):
-        s = state.State()
-        m = mastertest.RecordingMaster(options.Options(), None, s)
-        sc = script.Script(
-            tutils.test_data.path(
-                "data/addonscripts/concurrent_decorator_err.py"
+        with taddons.context() as tctx:
+            sc = script.Script(
+                tutils.test_data.path(
+                    "mitmproxy/data/addonscripts/concurrent_decorator_err.py"
+                )
             )
-        )
-        with m.handlecontext():
             sc.start()
-        assert "decorator not supported" in m.event_log[0][1]
+            assert "decorator not supported" in tctx.master.event_log[0][1]

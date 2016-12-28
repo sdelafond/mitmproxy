@@ -1,48 +1,63 @@
 import os.path
 import threading
 import tempfile
-import flask
-import mock
 import sys
 
+import mitmproxy.platform
 from mitmproxy.proxy.config import ProxyConfig
 from mitmproxy.proxy.server import ProxyServer
+from mitmproxy import master
 import pathod.test
 import pathod.pathoc
-from mitmproxy import flow, controller, options
-from mitmproxy import builtins
-import netlib.exceptions
-
-testapp = flask.Flask(__name__)
+from mitmproxy import controller
+from mitmproxy import options
+from mitmproxy import exceptions
 
 
-@testapp.route("/")
-def hello():
-    return "testapp"
+class TestState:
+    def __init__(self):
+        self.flows = []
+
+    def request(self, f):
+        if f not in self.flows:
+            self.flows.append(f)
+
+    def response(self, f):
+        if f not in self.flows:
+            self.flows.append(f)
+
+    def websocket_start(self, f):
+        if f not in self.flows:
+            self.flows.append(f)
+
+    # TODO: add TCP support?
+    # def tcp_start(self, f):
+    #     if f not in self.flows:
+    #         self.flows.append(f)
+
+    # FIXME: compat with old state - remove in favor of len(state.flows)
+    def flow_count(self):
+        return len(self.flows)
 
 
-@testapp.route("/error")
-def error():
-    raise ValueError("An exception...")
-
-
-def errapp(environ, start_response):
-    raise ValueError("errapp")
-
-
-class TestMaster(flow.FlowMaster):
+class TestMaster(master.Master):
 
     def __init__(self, opts, config):
         s = ProxyServer(config)
-        state = flow.State()
-        flow.FlowMaster.__init__(self, opts, s, state)
-        self.addons.add(*builtins.default_addons())
-        self.apps.add(testapp, "testapp", 80)
-        self.apps.add(errapp, "errapp", 80)
-        self.clear_log()
+        master.Master.__init__(self, opts, s)
+
+    def clear_addons(self, addons):
+        self.addons.clear()
+        self.state = TestState()
+        self.addons.add(self.state)
+        self.addons.add(*addons)
 
     def clear_log(self):
         self.tlog = []
+
+    def reset(self, addons):
+        self.clear_addons(addons)
+        self.clear_log()
 
     @controller.handler
     def log(self, e):
@@ -74,7 +89,7 @@ class ProxyThread(threading.Thread):
         self.tmaster.shutdown()
 
 
-class ProxyTestBase(object):
+class ProxyTestBase:
     # Test Configuration
     ssl = None
     ssloptions = False
@@ -94,7 +109,6 @@ class ProxyTestBase(object):
         opts = cls.get_options()
         cls.config = ProxyConfig(opts)
         tmaster = cls.masterclass(opts, cls.config)
-        tmaster.start_app(options.APP_HOST, options.APP_PORT)
         cls.proxy = ProxyThread(tmaster)
         cls.proxy.start()
 
@@ -110,14 +124,13 @@ class ProxyTestBase(object):
     def teardown(self):
         try:
             self.server.wait_for_silence()
-        except netlib.exceptions.Timeout:
+        except exceptions.Timeout:
             # FIXME: Track down the Windows sync issues
             if sys.platform != "win32":
                 raise
 
     def setup(self):
-        self.master.clear_log()
-        self.master.state.clear()
+        self.master.reset(self.addons())
         self.server.clear_log()
         self.server2.clear_log()
 
@@ -134,6 +147,12 @@ class ProxyTestBase(object):
             add_upstream_certs_to_client_chain=cls.add_upstream_certs_to_client_chain,
             ssl_insecure=True,
         )
+
+    def addons(self):
+        """
+            Can be over-ridden to add a standard set of addons to tests.
+        """
+        return []
 
 
 class LazyPathoc(pathod.pathoc.Pathoc):
@@ -188,33 +207,22 @@ class HTTPProxyTest(ProxyTestBase):
                 return p.request("get:'http://%s%s'" % (options.APP_HOST, page))
 
 
-class TResolver:
-
-    def __init__(self, port):
-        self.port = port
-
-    def original_addr(self, sock):
-        return ("127.0.0.1", self.port)
-
-
 class TransparentProxyTest(ProxyTestBase):
     ssl = None
-    resolver = TResolver
 
     @classmethod
     def setup_class(cls):
-        super(TransparentProxyTest, cls).setup_class()
-
-        cls._resolver = mock.patch(
-            "mitmproxy.platform.resolver",
-            new=lambda: cls.resolver(cls.server.port)
-        )
-        cls._resolver.start()
+        cls._init_transparent_mode = mitmproxy.platform.init_transparent_mode
+        cls._original_addr = mitmproxy.platform.original_addr
+        mitmproxy.platform.init_transparent_mode = lambda: True
+        mitmproxy.platform.original_addr = lambda sock: ("127.0.0.1", cls.server.port)
+        super().setup_class()
 
     @classmethod
     def teardown_class(cls):
-        cls._resolver.stop()
-        super(TransparentProxyTest, cls).teardown_class()
+        super().teardown_class()
+        mitmproxy.platform.init_transparent_mode = cls._init_transparent_mode
+        mitmproxy.platform.original_addr = cls._original_addr
 
     @classmethod
     def get_options(cls):
@@ -308,7 +316,7 @@ class ChainProxyTest(ProxyTestBase):
     @classmethod
     def setup_class(cls):
         cls.chain = []
-        super(ChainProxyTest, cls).setup_class()
+        super().setup_class()
         for _ in range(cls.n):
             opts = cls.get_options()
             config = ProxyConfig(opts)
@@ -323,19 +331,18 @@ class ChainProxyTest(ProxyTestBase):
 
     @classmethod
     def teardown_class(cls):
-        super(ChainProxyTest, cls).teardown_class()
+        super().teardown_class()
         for proxy in cls.chain:
             proxy.shutdown()
 
     def setup(self):
-        super(ChainProxyTest, self).setup()
+        super().setup()
         for proxy in self.chain:
-            proxy.tmaster.clear_log()
-            proxy.tmaster.state.clear()
+            proxy.tmaster.reset(self.addons())
 
     @classmethod
     def get_options(cls):
-        opts = super(ChainProxyTest, cls).get_options()
+        opts = super().get_options()
         if cls.chain:  # First proxy is in normal mode.
             opts.update(
                 mode="upstream",

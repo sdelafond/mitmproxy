@@ -2,7 +2,7 @@ import os
 from pathod import language
 from pathod.language import base, exceptions
 
-from . import tutils
+from mitmproxy.test import tutils
 
 
 def parse_request(s):
@@ -343,7 +343,7 @@ def test_unique_name():
     assert b.unique_name
 
 
-class test_boolean():
+class test_boolean:
     e = TBoolean.expr()
     assert e.parseString("test")[0].value
     assert not e.parseString("-test")[0].value

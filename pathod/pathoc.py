@@ -1,27 +1,29 @@
-from __future__ import print_function
 import contextlib
 import sys
 import os
 import itertools
 import hashlib
-from six.moves import queue
+import queue
 import random
 import select
 import time
 
 import OpenSSL.crypto
-import six
 import logging
 
-from netlib.tutils import treq
-from netlib import strutils
-from netlib import tcp, certutils, websockets, socks
-from netlib import exceptions
-from netlib.http import http1
-from netlib import basethread
+from mitmproxy.test.tutils import treq
+from mitmproxy.utils import strutils
+from mitmproxy.net import tcp
+from mitmproxy import certs
+from mitmproxy.net import websockets
+from mitmproxy.net import socks
+from mitmproxy import exceptions
+from mitmproxy.net.http import http1
+from mitmproxy.types import basethread
 
-from . import log, language
-from .protocols import http2
+from pathod import log
+from pathod import language
+from pathod.protocols import http2
 
 
 logging.getLogger("hpack").setLevel(logging.WARNING)
@@ -35,7 +37,7 @@ class PathocError(Exception):
     pass
 
 
-class SSLInfo(object):
+class SSLInfo:
 
     def __init__(self, certchain, cipher, alp):
         self.certchain, self.cipher, self.alp = certchain, cipher, alp
@@ -78,7 +80,7 @@ class SSLInfo(object):
             }
             t = types.get(pk.type(), "Uknown")
             parts.append("\tPubkey: %s bit %s" % (pk.bits(), t))
-            s = certutils.SSLCert(i)
+            s = certs.SSLCert(i)
             if s.altnames:
                 parts.append("\tSANs: %s" % " ".join(strutils.native(n, "utf8") for n in s.altnames))
         return "\n".join(parts)
@@ -123,7 +125,10 @@ class WebsocketFrameReader(basethread.BaseThread):
             while True:
                 if self.ws_read_limit == 0:
                     return
-                r, _, _ = select.select([self.rfile], [], [], 0.05)
+                try:
+                    r, _, _ = select.select([self.rfile], [], [], 0.05)
+                except OSError:
+                    return
                 delta = time.time() - starttime
                 if not r and self.timeout and delta > self.timeout:
                     return
@@ -250,9 +255,9 @@ class Pathoc(tcp.TCPClient):
             if resp.status_code != 200:
                 raise exceptions.HttpException("Unexpected status code: %s" % resp.status_code)
         except exceptions.HttpException as e:
-            six.reraise(PathocError, PathocError(
+            raise PathocError(
                 "Proxy CONNECT failed: %s" % repr(e)
-            ))
+            )
 
     def socks_connect(self, connect_to):
         try:
@@ -461,7 +466,7 @@ class Pathoc(tcp.TCPClient):
 
             May raise a exceptions.NetlibException
         """
-        if isinstance(r, six.string_types):
+        if isinstance(r, str):
             r = next(language.parse_pathoc(r, self.use_http2))
 
         if isinstance(r, language.http.Request):

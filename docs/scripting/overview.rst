@@ -6,7 +6,7 @@ Overview
 Mitmproxy has a powerful scripting API that allows you to control almost any
 aspect of traffic being proxied. In fact, much of mitmproxy's own core
 functionality is implemented using the exact same API exposed to scripters (see
-:src:`mitmproxy/builtins`).
+:src:`mitmproxy/addons`).
 
 
 A simple example
@@ -17,8 +17,8 @@ appropriate points of mitmproxy's operation. Here's a complete mitmproxy script
 that adds a new header to every HTTP response before it is returned to the
 client:
 
-.. literalinclude:: ../../examples/add_header.py
-   :caption: :src:`examples/add_header.py`
+.. literalinclude:: ../../examples/simple/add_header.py
+   :caption: :src:`examples/simple/add_header.py`
    :language: python
 
 All events that deal with an HTTP request get an instance of `HTTPFlow
@@ -42,8 +42,8 @@ called before anything else happens. You can replace the current script object
 by returning it from this handler. Here's how this looks when applied to the
 example above:
 
-.. literalinclude:: ../../examples/classes.py
-   :caption: :src:`examples/classes.py`
+.. literalinclude:: ../../examples/simple/add_header_class.py
+   :caption: :src:`examples/simple/add_header_class.py`
    :language: python
 
 So here, we're using a module-level script to "boot up" into a class instance.
@@ -62,13 +62,13 @@ sophisticated - replace one value with another in all responses. Mitmproxy's
 <api.html#mitmproxy.models.http.HTTPResponse.replace>`_ method that takes care
 of all the details for us.
 
-.. literalinclude:: ../../examples/arguments.py
-   :caption: :src:`examples/arguments.py`
+.. literalinclude:: ../../examples/simple/script_arguments.py
+   :caption: :src:`examples/simple/script_arguments.py`
    :language: python
 
 We can now call this script on the command-line like this:
 
->>> mitmdump -dd -s "./arguments.py html faketml"
+>>> mitmdump -dd -s "./script_arguments.py html faketml"
 
 Whenever a handler is called, mitpmroxy rewrites the script environment so that
 it sees its own arguments as if it was invoked from the command-line.
@@ -78,15 +78,15 @@ Logging and the context
 -----------------------
 
 Scripts should not output straight to stderr or stdout. Instead, the `log
-<api.html#mitmproxy.controller.Log>`_ object on the ``ctx`` contexzt module
+<api.html#mitmproxy.controller.Log>`_ object on the ``ctx`` context module
 should be used, so that the mitmproxy host program can handle output
-appropriately. So, mitmdump can print colorised sript output to the terminal,
+appropriately. So, mitmdump can print colorised script output to the terminal,
 and mitmproxy console can place script output in the event buffer.
 
 Here's how this looks:
 
-.. literalinclude:: ../../examples/logging.py
-   :caption: :src:`examples/logging.py`
+.. literalinclude:: ../../examples/simple/log_events.py
+   :caption: :src:`examples/simple/log_events.py`
    :language: python
 
 The ``ctx`` module also exposes the mitmproxy master object at ``ctx.master``
@@ -126,15 +126,32 @@ It's possible to implement a concurrent mechanism on top of the blocking
 framework, and mitmproxy includes a handy example of this that is fit for most
 purposes. You can use it as follows:
 
-.. literalinclude:: ../../examples/nonblocking.py
-   :caption: :src:`examples/nonblocking.py`
+.. literalinclude:: ../../examples/complex/nonblocking.py
+   :caption: :src:`examples/complex/nonblocking.py`
+   :language: python
+
+
+Testing
+-------
+
+Mitmproxy includes a number of helpers for testing addons. The
+``mitmproxy.test.taddons`` module contains a context helper that takes care of
+setting up and tearing down the addon event context. The
+``mitmproxy.test.tflow`` module contains helpers for quickly creating test
+flows. Pydoc is the canonical reference for these modules, and mitmproxy's own
+test suite is an excellent source of examples of usage. Here, for instance, is
+the mitmproxy unit tests for the `anticache` option, demonstrating a good
+cross-section of the test helpers:
+
+.. literalinclude:: ../../test/mitmproxy/addons/test_anticache.py
+   :caption: :src:`test/mitmproxy/addons/test_anticache.py`
    :language: python
 
 
 Developing scripts
 ------------------
 
-Mitmprxoy monitors scripts for modifications, and reloads them on change. When
+Mitmproxy monitors scripts for modifications, and reloads them on change. When
 this happens, the script is shut down (the `done <events.html#done>`_  event is
 called), and the new instance is started up as if the script had just been
 loaded (the `start <events.html#start>`_ and `configure

@@ -1,8 +1,7 @@
 import time
 
-import six
-
-from netlib import strutils, human
+from mitmproxy.utils import strutils
+from mitmproxy.utils import human
 
 
 def write_raw(fp, lines, timestamp=True):
@@ -15,7 +14,7 @@ def write_raw(fp, lines, timestamp=True):
         fp.flush()
 
 
-class LogCtx(object):
+class LogCtx:
 
     def __init__(self, fp, hex, timestamp, rfile, wfile):
         self.lines = []
@@ -52,7 +51,7 @@ class LogCtx(object):
                 timestamp = self.timestamp
             )
         if exc_value:
-            six.reraise(exc_type, exc_value, traceback)
+            raise exc_value
 
     def suppress(self):
         self.suppressed = True

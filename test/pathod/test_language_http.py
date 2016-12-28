@@ -1,8 +1,9 @@
-from six import BytesIO
+import io
 from pathod import language
 from pathod.language import http, base
 
-from . import tutils
+from mitmproxy.test import tutils
+from . import tservers
 
 
 def parse_request(s):
@@ -10,7 +11,7 @@ def parse_request(s):
 
 
 def test_make_error_response():
-    d = BytesIO()
+    d = io.BytesIO()
     s = http.make_error_response("foo")
     language.serve(s, d, {})
 
@@ -76,7 +77,7 @@ class TestRequest:
         assert r[0].values({})
 
     def test_render(self):
-        s = BytesIO()
+        s = io.BytesIO()
         r = parse_request("GET:'/foo'")
         assert language.serve(
             r,
@@ -163,7 +164,7 @@ class TestResponse:
         assert b"OK" in [i[:] for i in r.preamble({})]
 
     def test_render(self):
-        s = BytesIO()
+        s = io.BytesIO()
         r = next(language.parse_pathod("400:m'msg'"))
         assert language.serve(r, s, {})
 
@@ -173,13 +174,13 @@ class TestResponse:
         assert "p0" not in s.spec()
 
     def test_raw(self):
-        s = BytesIO()
+        s = io.BytesIO()
         r = next(language.parse_pathod("400:b'foo'"))
         language.serve(r, s, {})
         v = s.getvalue()
         assert b"Content-Length" in v
 
-        s = BytesIO()
+        s = io.BytesIO()
         r = next(language.parse_pathod("400:b'foo':r"))
         language.serve(r, s, {})
         v = s.getvalue()
@@ -187,7 +188,7 @@ class TestResponse:
 
     def test_length(self):
         def testlen(x):
-            s = BytesIO()
+            s = io.BytesIO()
             x = next(x)
             language.serve(x, s, language.Settings())
             assert x.length(language.Settings()) == len(s.getvalue())
@@ -198,7 +199,7 @@ class TestResponse:
     def test_maximum_length(self):
         def testlen(x):
             x = next(x)
-            s = BytesIO()
+            s = io.BytesIO()
             m = x.maximum_length({})
             language.serve(x, s, {})
             assert m >= len(s.getvalue())
@@ -302,8 +303,8 @@ def test_shortcuts():
     assert next(language.parse_pathod(
         "400:l'foo'")).headers[0].key.val == b"Location"
 
-    assert b"Android" in tutils.render(parse_request("get:/:ua"))
-    assert b"User-Agent" in tutils.render(parse_request("get:/:ua"))
+    assert b"Android" in tservers.render(parse_request("get:/:ua"))
+    assert b"User-Agent" in tservers.render(parse_request("get:/:ua"))
 
 
 def test_user_agent():

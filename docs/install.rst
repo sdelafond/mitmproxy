@@ -3,130 +3,149 @@
 Installation
 ============
 
-.. _install-ubuntu:
+Please follow the steps for your operating system.
 
-Installation On Ubuntu
-----------------------
+Once installation is complete, you can run :ref:`mitmproxy`, :ref:`mitmdump` or
+:ref:`mitmweb` from a terminal.
 
-Ubuntu comes with Python but we need to install pip, python-dev and several libraries.
-This was tested on a fully patched installation of Ubuntu 14.04.
 
-.. code:: bash
+.. _install-macos:
 
-   sudo apt-get install python-pip python-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev libjpeg8-dev zlib1g-dev g++
-   sudo pip install mitmproxy  # or pip install --user mitmproxy
+Installation on macOS
+---------------------
 
-Once installation is complete you can run :ref:`mitmproxy` or :ref:`mitmdump` from a terminal.
-
-On **Ubuntu 12.04** (and other systems with an outdated version of pip),
-you may need to update pip using ``pip install -U pip`` before installing mitmproxy.
-
-Installation From Source (Ubuntu)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-If you would like to install mitmproxy directly from the master branch on GitHub or would like to
-get set up to contribute to the project, install the dependencies as you would for a regular
-mitmproxy installation (see :ref:`install-ubuntu`).
-Then see the Hacking_ section of the README on GitHub.
-
-.. _install-fedora:
-
-Installation On Fedora
-----------------------
-
-Fedora comes with Python but we need to install pip, python-dev and several libraries.
-This was tested on a fully patched installation of Fedora 23.
+You can use Homebrew to install everything:
 
 .. code:: bash
 
-   sudo dnf install -y python-pip python-devel libffi-devel openssl-devel libxml2-devel libxslt-devel libpng-devel libjpeg-devel
-   sudo pip install mitmproxy  # or pip install --user mitmproxy
+    brew install mitmproxy
 
-Once installation is complete you can run :ref:`mitmproxy` or :ref:`mitmdump` from a terminal.
+Or you can download the pre-built binary packages from `mitmproxy.org`_.
+
+
+.. _install-windows:
+
+Installation on Windows
+-----------------------
+
+The recommended way to install mitmproxy on Windows is to use the installer
+provided at `mitmproxy.org`_. After installation, you'll find shortcuts for
+:ref:`mitmweb` (the web-based interface) and :ref:`mitmdump` in the start menu.
+Both executables are  added to your PATH and can be invoked from the command
+line.
+
+.. note::
+    mitmproxy's console interface is not supported on Windows, but you can use
+    mitmweb (the web-based interface) and mitmdump.
+
+.. _install-linux:
+
+Installation on Linux
+---------------------
+
+The recommended way to run mitmproxy on Linux is to use the pre-built binaries
+provided at `mitmproxy.org`_.
+
+Our pre-built binaries provide you with the latest version of mitmproxy, a
+self-contained Python 3.5 environment and a recent version of OpenSSL that
+supports HTTP/2. Of course, you can also install mitmproxy from source if you
+prefer that (see :ref:`install-advanced`).
+
+.. _install-advanced:
+
+Advanced Installation
+---------------------
+
+.. _install-docker:
+
+Docker Images
+^^^^^^^^^^^^^
+
+You can also use the official mitmproxy images from `DockerHub`_. That being
+said, our portable binaries are just as easy to install and even easier to use. 😊
 
 
 .. _install-arch:
 
-Installation On Arch Linux
---------------------------
+Installation on Arch Linux
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 mitmproxy has been added into the [community] repository. Use pacman to install it:
 
 >>> sudo pacman -S mitmproxy
 
 
+.. _install-source-ubuntu:
 
-Installation On Mac OS X
-------------------------
+Installation from Source on Ubuntu
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The easiest way to get up and running on OSX is to download the pre-built binary packages from
-`mitmproxy.org`_.
+Ubuntu comes with Python but we need to install pip3, python3-dev and several
+libraries. This was tested on a fully patched installation of Ubuntu 16.04.
 
-There are a few bits of customization you might want to do to make mitmproxy comfortable to use on
-OSX. The default color scheme is optimized for a dark background terminal, but you can select a
-palette for a light terminal background with the ``--palette`` option.
-You can use the OSX **open** program to create a simple and effective ``~/.mailcap`` file to view
-request and response bodies:
+.. code:: bash
 
-.. code-block:: none
+   sudo apt-get install python3-pip python3-dev libffi-dev libssl-dev libtiff5-dev libjpeg8-dev zlib1g-dev libwebp-dev
+   sudo pip3 install mitmproxy  # or pip3 install --user mitmproxy
 
-    application/*; /usr/bin/open -Wn %s
-    audio/*; /usr/bin/open -Wn %s
-    image/*; /usr/bin/open -Wn %s
-    video/*; /usr/bin/open -Wn %s
-
-Once installation is complete you can run :ref:`mitmproxy` or :ref:`mitmdump` from a terminal.
+On older Ubuntu versions, e.g., **12.04** and **14.04**, you may need to install
+a newer version of Python. mitmproxy requires Python 3.5 or higher. Please take
+a look at pyenv_. Make sure to have an up-to-date version of pip by running
+``pip3 install -U pip``.
 
 
-Installation From Source (Mac OS X)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. _install-source-fedora:
 
-If you would like to install mitmproxy directly from the master branch on GitHub or would like to
-get set up to contribute to the project, there are a few OS X specific things to keep in mind.
+Installation from Source on Fedora
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-- Make sure that XCode is installed from the App Store, and that the command-line tools have been
-  downloaded (XCode/Preferences/Downloads).
-- If you're running a Python interpreter installed with homebrew (or similar), you may have to
-  install some dependencies by hand.
+Fedora comes with Python but we need to install pip3, python3-dev and several
+libraries. This was tested on a fully patched installation of Fedora 24.
 
-Then see the Hacking_ section of the README on GitHub.
+.. code:: bash
 
-Installation On Windows
------------------------
+   sudo dnf install make gcc redhat-rpm-config python3-pip python3-devel libffi-devel openssl-devel libtiff-devel libjpeg-devel zlib-devel libwebp-devel openjpeg2-devel
+   sudo pip3 install mitmproxy  # or pip3 install --user mitmproxy
+
+Make sure to have an up-to-date version of pip by running ``pip3 install -U pip``.
+
+
+
+.. _install-source-windows:
+
+🐱💻 Installation from Source on Windows
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. note::
-    Please note that mitmdump is the only component of mitmproxy that is supported on Windows at
-    the moment.
+    mitmproxy's console interface is not supported on Windows, but you can use
+    mitmweb (the web-based interface) and mitmdump.
 
-    **There is no interactive user interface on Windows.**
-
-
-First, install the latest version of Python 2.7 from the `Python website`_.
-If you already have an older version of Python 2.7 installed, make sure to install pip_
-(pip is included in Python 2.7.9+ by default). If pip aborts with an error, make sure you are using the current version of pip.
-
->>> python -m pip install --upgrade pip
-
-Next, add Python and the Python Scripts directory to your **PATH** variable.
-You can do this easily by running the following in powershell:
-
->>> [Environment]::SetEnvironmentVariable("Path", "$env:Path;C:\Python27;C:\Python27\Scripts", "User")
+First, install the latest version of Python 3.5 or later from the `Python
+website`_. During installation, make sure to select `Add Python to PATH`.
 
 Now, you can install mitmproxy by running
 
->>> pip install mitmproxy
+.. code:: powershell
 
-Once the installation is complete, you can run :ref:`mitmdump` from a command prompt.
+    pip3 install mitmproxy
 
-Installation From Source (Windows)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you would like to install mitmproxy directly from the master branch on GitHub or would like to
-get set up to contribute to the project, install Python as outlined above, then see the
-Hacking_ section of the README on GitHub.
+
+.. _install-dev-version:
+
+Latest Development Version
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you would like to install mitmproxy directly from the master branch on GitHub
+or would like to get set up to contribute to the project, install the
+dependencies as you would for a regular installation from source. Then see the
+Hacking_ section of the README on GitHub. You can check your system information
+by running: ``mitmproxy --sysinfo``
 
 
 .. _Hacking: https://github.com/mitmproxy/mitmproxy/blob/master/README.rst#hacking
 .. _mitmproxy.org: https://mitmproxy.org/
 .. _`Python website`: https://www.python.org/downloads/windows/
 .. _pip: https://pip.pypa.io/en/latest/installing.html
+.. _pyenv: https://github.com/yyuu/pyenv
+.. _DockerHub: https://hub.docker.com/r/mitmproxy/mitmproxy/

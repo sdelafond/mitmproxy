@@ -2,7 +2,6 @@ import string
 import random
 import mmap
 
-import six
 import sys
 
 DATATYPES = dict(
@@ -15,11 +14,11 @@ DATATYPES = dict(
     punctuation=string.punctuation.encode(),
     whitespace=string.whitespace.encode(),
     ascii=string.printable.encode(),
-    bytes=bytes(bytearray(range(256)))
+    bytes=bytes(range(256))
 )
 
 
-class TransformGenerator(object):
+class TransformGenerator:
 
     """
         Perform a byte-by-byte transform another generator - that is, for each
@@ -52,12 +51,10 @@ def rand_byte(chars):
     """
     # bytearray has consistent behaviour on both Python 2 and 3
     # while bytes does not
-    if six.PY2:
-        return random.choice(chars)
     return bytes([random.choice(chars)])
 
 
-class RandomGenerator(object):
+class RandomGenerator:
 
     def __init__(self, dtype, length):
         self.dtype = dtype
@@ -76,7 +73,7 @@ class RandomGenerator(object):
         return "%s random from %s" % (self.length, self.dtype)
 
 
-class FileGenerator(object):
+class FileGenerator:
 
     def __init__(self, path):
         self.path = path

@@ -31,18 +31,17 @@
         ~c CODE     Response code.
         rex         Equivalent to ~u rex
 """
-from __future__ import absolute_import, print_function, division
 
 import re
 import sys
 import functools
-import six
 
-from mitmproxy.models.http import HTTPFlow
-from mitmproxy.models.tcp import TCPFlow
-from mitmproxy.models.flow import Flow
+from mitmproxy import http
+from mitmproxy import websocket
+from mitmproxy import tcp
+from mitmproxy import flow
 
-from netlib import strutils
+from mitmproxy.utils import strutils
 
 import pyparsing as pp
 from typing import Callable
@@ -59,7 +58,7 @@ def only(*types):
     return decorator
 
 
-class _Token(object):
+class _Token:
 
     def dump(self, indent=0, fp=sys.stdout):
         print("{spacing}{name}{expr}".format(
@@ -96,7 +95,16 @@ class FHTTP(_Action):
     code = "http"
     help = "Match HTTP flows"
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
+    def __call__(self, f):
+        return True
+
+
+class FWebSocket(_Action):
+    code = "websocket"
+    help = "Match WebSocket flows"
+
+    @only(websocket.WebSocketFlow)
     def __call__(self, f):
         return True
 
@@ -105,7 +113,7 @@ class FTCP(_Action):
     code = "tcp"
     help = "Match TCP flows"
 
-    @only(TCPFlow)
+    @only(tcp.TCPFlow)
     def __call__(self, f):
         return True
 
@@ -114,7 +122,7 @@ class FReq(_Action):
     code = "q"
     help = "Match request with no response"
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if not f.response:
             return True
@@ -124,7 +132,7 @@ class FResp(_Action):
     code = "s"
     help = "Match response"
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         return bool(f.response)
 
@@ -164,7 +172,7 @@ class FAsset(_Action):
     ]
     ASSET_TYPES = [re.compile(x) for x in ASSET_TYPES]
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if f.response:
             for i in self.ASSET_TYPES:
@@ -177,7 +185,7 @@ class FContentType(_Rex):
     code = "t"
     help = "Content-type header"
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if _check_content_type(self.re, f.request):
             return True
@@ -190,7 +198,7 @@ class FContentTypeRequest(_Rex):
     code = "tq"
     help = "Request Content-Type header"
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         return _check_content_type(self.re, f.request)
 
@@ -199,7 +207,7 @@ class FContentTypeResponse(_Rex):
     code = "ts"
     help = "Response Content-Type header"
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if f.response:
             return _check_content_type(self.re, f.response)
@@ -211,7 +219,7 @@ class FHead(_Rex):
     help = "Header"
     flags = re.MULTILINE
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if f.request and self.re.search(bytes(f.request.headers)):
             return True
@@ -225,7 +233,7 @@ class FHeadRequest(_Rex):
     help = "Request header"
     flags = re.MULTILINE
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if f.request and self.re.search(bytes(f.request.headers)):
             return True
@@ -236,7 +244,7 @@ class FHeadResponse(_Rex):
     help = "Response header"
     flags = re.MULTILINE
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if f.response and self.re.search(bytes(f.response.headers)):
             return True
@@ -247,16 +255,16 @@ class FBod(_Rex):
     help = "Body"
     flags = re.DOTALL
 
-    @only(HTTPFlow, TCPFlow)
+    @only(http.HTTPFlow, websocket.WebSocketFlow, tcp.TCPFlow)
     def __call__(self, f):
-        if isinstance(f, HTTPFlow):
+        if isinstance(f, http.HTTPFlow):
             if f.request and f.request.raw_content:
                 if self.re.search(f.request.get_content(strict=False)):
                     return True
             if f.response and f.response.raw_content:
                 if self.re.search(f.response.get_content(strict=False)):
                     return True
-        elif isinstance(f, TCPFlow):
+        elif isinstance(f, websocket.WebSocketFlow) or isinstance(f, tcp.TCPFlow):
             for msg in f.messages:
                 if self.re.search(msg.content):
                     return True
@@ -268,13 +276,13 @@ class FBodRequest(_Rex):
     help = "Request body"
     flags = re.DOTALL
 
-    @only(HTTPFlow, TCPFlow)
+    @only(http.HTTPFlow, websocket.WebSocketFlow, tcp.TCPFlow)
     def __call__(self, f):
-        if isinstance(f, HTTPFlow):
+        if isinstance(f, http.HTTPFlow):
             if f.request and f.request.raw_content:
                 if self.re.search(f.request.get_content(strict=False)):
                     return True
-        elif isinstance(f, TCPFlow):
+        elif isinstance(f, websocket.WebSocketFlow) or isinstance(f, tcp.TCPFlow):
             for msg in f.messages:
                 if msg.from_client and self.re.search(msg.content):
                     return True
@@ -285,13 +293,13 @@ class FBodResponse(_Rex):
     help = "Response body"
     flags = re.DOTALL
 
-    @only(HTTPFlow, TCPFlow)
+    @only(http.HTTPFlow, websocket.WebSocketFlow, tcp.TCPFlow)
     def __call__(self, f):
-        if isinstance(f, HTTPFlow):
+        if isinstance(f, http.HTTPFlow):
             if f.response and f.response.raw_content:
                 if self.re.search(f.response.get_content(strict=False)):
                     return True
-        elif isinstance(f, TCPFlow):
+        elif isinstance(f, websocket.WebSocketFlow) or isinstance(f, tcp.TCPFlow):
             for msg in f.messages:
                 if not msg.from_client and self.re.search(msg.content):
                     return True
@@ -302,7 +310,7 @@ class FMethod(_Rex):
     help = "Method"
     flags = re.IGNORECASE
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         return bool(self.re.search(f.request.data.method))
 
@@ -312,7 +320,7 @@ class FDomain(_Rex):
     help = "Domain"
     flags = re.IGNORECASE
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         return bool(self.re.search(f.request.data.host))
 
@@ -329,7 +337,7 @@ class FUrl(_Rex):
             toks = toks[1:]
         return klass(*toks)
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         return self.re.search(f.request.url)
 
@@ -362,7 +370,7 @@ class FCode(_Int):
     code = "c"
     help = "HTTP response code"
 
-    @only(HTTPFlow)
+    @only(http.HTTPFlow)
     def __call__(self, f):
         if f.response and f.response.status_code == self.num:
             return True
@@ -374,7 +382,7 @@ class FAnd(_Token):
         self.lst = lst
 
     def dump(self, indent=0, fp=sys.stdout):
-        super(FAnd, self).dump(indent, fp)
+        super().dump(indent, fp)
         for i in self.lst:
             i.dump(indent + 1, fp)
 
@@ -388,7 +396,7 @@ class FOr(_Token):
         self.lst = lst
 
     def dump(self, indent=0, fp=sys.stdout):
-        super(FOr, self).dump(indent, fp)
+        super().dump(indent, fp)
         for i in self.lst:
             i.dump(indent + 1, fp)
 
@@ -402,7 +410,7 @@ class FNot(_Token):
         self.itm = itm[0]
 
     def dump(self, indent=0, fp=sys.stdout):
-        super(FNot, self).dump(indent, fp)
+        super().dump(indent, fp)
         self.itm.dump(indent + 1, fp)
 
     def __call__(self, f):
@@ -484,14 +492,13 @@ def _make():
                                   ])
     expr = pp.OneOrMore(expr)
     return expr.setParseAction(lambda x: FAnd(x) if len(x) != 1 else x)
+
+
 bnf = _make()
+TFilter = Callable[[flow.Flow], bool]
 
 
-TFilter = Callable[[Flow], bool]
-
-
-def parse(s):
-    # type: (str) -> TFilter
+def parse(s: str) -> TFilter:
     try:
         flt = bnf.parseString(s, parseAll=True)[0]
         flt.pattern = s
@@ -510,7 +517,7 @@ def match(flt, flow):
         If flt is a string, it will be compiled as a filter expression.
         If the expression is invalid, ValueError is raised.
     """
-    if isinstance(flt, six.string_types):
+    if isinstance(flt, str):
         flt = parse(flt)
         if not flt:
             raise ValueError("Invalid filter expression.")
