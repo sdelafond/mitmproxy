@@ -12,10 +12,10 @@ index 483cb22..9984106 100644
 +++ b/test/mitmproxy/test_examples.py
 @@ -17,7 +17,7 @@ from netlib.http import cookies
  
- from . import tutils, mastertest
+ from . import mastertest
  
--example_dir = netlib.utils.Data(__name__).push("../../examples")
-+example_dir = netlib.utils.Data(__name__).push("../../../../../examples")
+-example_dir = tutils.test_data.push("../examples")
++example_dir = tutils.test_data.push("../../../../examples")
  
  
  class ScriptError(Exception):
