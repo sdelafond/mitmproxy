@@ -1,15 +1,14 @@
-from __future__ import (absolute_import, print_function, division)
+from mitmproxy.test import tflow
+from mitmproxy.net.http import http1
+from mitmproxy.net.tcp import TCPClient
+from mitmproxy.test.tutils import treq
+from .. import tservers
 
-from netlib.http import http1
-from netlib.tcp import TCPClient
-from netlib.tutils import treq
-from .. import tutils, tservers
 
-
-class TestHTTPFlow(object):
+class TestHTTPFlow:
 
     def test_repr(self):
-        f = tutils.tflow(resp=True, err=True)
+        f = tflow.tflow(resp=True, err=True)
         assert repr(f)
 
 
@@ -21,7 +20,7 @@ class TestInvalidRequests(tservers.HTTPProxyTest):
         with p.connect():
             r = p.request("connect:'%s:%s'" % ("127.0.0.1", self.server2.port))
         assert r.status_code == 400
-        assert b"Invalid HTTP request form" in r.content
+        assert b"Unexpected CONNECT" in r.content
 
     def test_relative_request(self):
         p = self.pathoc_raw()

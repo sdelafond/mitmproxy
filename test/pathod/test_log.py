@@ -1,10 +1,10 @@
+import io
+
 from pathod import log
-from netlib.exceptions import TcpDisconnect
-
-import six
+from mitmproxy import exceptions
 
 
-class DummyIO(six.StringIO):
+class DummyIO(io.StringIO):
 
     def start_log(self, *args, **kwargs):
         pass
@@ -20,6 +20,6 @@ def test_disconnect():
     try:
         with l.ctx() as lg:
             lg("Test")
-    except TcpDisconnect:
+    except exceptions.TcpDisconnect:
         pass
     assert "Test" in outf.getvalue()

@@ -1,4 +1,2 @@
-from typing import Callable  # noqa
-
-master = None  # type: "mitmproxy.flow.FlowMaster"
-log = None  # type: "mitmproxy.controller.Log"
+master = None  # type: "mitmproxy.master.Master"
+log = None  # type: "mitmproxy.log.Log"

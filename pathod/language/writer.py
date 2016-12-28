@@ -1,5 +1,5 @@
 import time
-from netlib.exceptions import TcpDisconnect
+from mitmproxy import exceptions
 
 BLOCKSIZE = 1024
 # It's not clear what the upper limit for time.sleep is. It's lower than the
@@ -57,10 +57,12 @@ def write_values(fp, vals, actions, sofar=0, blocksize=BLOCKSIZE):
         while actions:
             a = actions.pop()
             if a[1] == "pause":
-                time.sleep(a[2])
+                time.sleep(
+                    FOREVER if a[2] == "f" else a[2]
+                )
             elif a[1] == "disconnect":
                 return True
             elif a[1] == "inject":
                 send_chunk(fp, a[2], blocksize, 0, len(a[2]))
-    except TcpDisconnect:  # pragma: no cover
+    except exceptions.TcpDisconnect:  # pragma: no cover
         return True

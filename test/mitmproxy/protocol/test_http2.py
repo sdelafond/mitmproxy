@@ -1,8 +1,6 @@
 # coding=utf-8
 
-from __future__ import (absolute_import, print_function, division)
 
-import pytest
 import os
 import tempfile
 import traceback
@@ -12,12 +10,13 @@ import h2
 from mitmproxy import options
 from mitmproxy.proxy.config import ProxyConfig
 
-import netlib
-from ...netlib import tservers as netlib_tservers
-from netlib.exceptions import HttpException
-from netlib.http import http1, http2
+import mitmproxy.net
+from ...mitmproxy.net import tservers as net_tservers
+from mitmproxy import exceptions
+from mitmproxy.net.http import http1, http2
 
 from .. import tservers
+from ...conftest import requires_alpn
 
 import logging
 logging.getLogger("hyper.packages.hpack.hpack").setLevel(logging.WARNING)
@@ -28,20 +27,15 @@ logging.getLogger("PIL.Image").setLevel(logging.WARNING)
 logging.getLogger("PIL.PngImagePlugin").setLevel(logging.WARNING)
 
 
-requires_alpn = pytest.mark.skipif(
-    not netlib.tcp.HAS_ALPN,
-    reason='requires OpenSSL with ALPN support')
-
-
 # inspect the log:
 #   for msg in self.proxy.tmaster.tlog:
 #       print(msg)
 
 
-class _Http2ServerBase(netlib_tservers.ServerTestBase):
+class _Http2ServerBase(net_tservers.ServerTestBase):
     ssl = dict(alpn_select=b'h2')
 
-    class handler(netlib.tcp.BaseHandler):
+    class handler(mitmproxy.net.tcp.BaseHandler):
 
         def handle(self):
             h2_conn = h2.connection.H2Connection(client_side=False, header_encoding=False)
@@ -62,10 +56,10 @@ class _Http2ServerBase(netlib_tservers.ServerTestBase):
                 try:
                     raw = b''.join(http2.read_raw_frame(self.rfile))
                     events = h2_conn.receive_data(raw)
-                except HttpException:
+                except exceptions.HttpException:
                     print(traceback.format_exc())
                     assert False
-                except netlib.exceptions.TcpDisconnect:
+                except exceptions.TcpDisconnect:
                     break
                 except:
                     print(traceback.format_exc())
@@ -78,7 +72,7 @@ class _Http2ServerBase(netlib_tservers.ServerTestBase):
                         if not self.server.handle_server_event(event, h2_conn, self.rfile, self.wfile):
                             done = True
                             break
-                    except netlib.exceptions.TcpDisconnect:
+                    except exceptions.TcpDisconnect:
                         done = True
                     except:
                         done = True
@@ -89,7 +83,7 @@ class _Http2ServerBase(netlib_tservers.ServerTestBase):
         raise NotImplementedError()
 
 
-class _Http2TestBase(object):
+class _Http2TestBase:
 
     @classmethod
     def setup_class(cls):
@@ -97,7 +91,6 @@ class _Http2TestBase(object):
         cls.config = ProxyConfig(opts)
 
         tmaster = tservers.TestMaster(opts, cls.config)
-        tmaster.start_app(options.APP_HOST, options.APP_PORT)
         cls.proxy = tservers.ProxyThread(tmaster)
         cls.proxy.start()
 
@@ -120,16 +113,15 @@ class _Http2TestBase(object):
         return self.proxy.tmaster
 
     def setup(self):
-        self.master.clear_log()
-        self.master.state.clear()
+        self.master.reset([])
         self.server.server.handle_server_event = self.handle_server_event
 
     def _setup_connection(self):
-        client = netlib.tcp.TCPClient(("127.0.0.1", self.proxy.port))
+        client = mitmproxy.net.tcp.TCPClient(("127.0.0.1", self.proxy.port))
         client.connect()
 
         # send CONNECT request
-        client.wfile.write(http1.assemble_request(netlib.http.Request(
+        client.wfile.write(http1.assemble_request(mitmproxy.net.http.Request(
             'authority',
             b'CONNECT',
             b'',
@@ -255,7 +247,7 @@ class TestSimple(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -276,7 +268,7 @@ class TestSimple(_Http2Test):
         assert self.master.state.flows[0].response.status_code == 200
         assert self.master.state.flows[0].response.headers['server-foo'] == 'server-bar'
         assert self.master.state.flows[0].response.headers['föo'] == 'bär'
-        assert self.master.state.flows[0].response.body == b'response body'
+        assert self.master.state.flows[0].response.content == b'response body'
         assert self.request_body_buffer == b'request body'
         assert response_body_buffer == b'response body'
 
@@ -301,9 +293,9 @@ class TestRequestWithPriority(_Http2Test):
 
                 headers = [(':status', '200')]
                 if event.priority_updated:
-                    headers.append(('priority_exclusive', event.priority_updated.exclusive))
-                    headers.append(('priority_depends_on', event.priority_updated.depends_on))
-                    headers.append(('priority_weight', event.priority_updated.weight))
+                    headers.append(('priority_exclusive', str(event.priority_updated.exclusive).encode()))
+                    headers.append(('priority_depends_on', str(event.priority_updated.depends_on).encode()))
+                    headers.append(('priority_weight', str(event.priority_updated.weight).encode()))
                 h2_conn.send_headers(event.stream_id, headers)
             h2_conn.end_stream(event.stream_id)
             wfile.write(h2_conn.data_to_send())
@@ -332,7 +324,7 @@ class TestRequestWithPriority(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -371,7 +363,7 @@ class TestRequestWithPriority(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -443,7 +435,7 @@ class TestPriority(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -520,7 +512,7 @@ class TestPriorityWithExistingStream(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -571,7 +563,7 @@ class TestStreamResetFromServer(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -621,7 +613,7 @@ class TestBodySizeLimit(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -652,6 +644,9 @@ class TestPushPromise(_Http2Test):
                 return True
 
             h2_conn.send_headers(1, [(':status', '200')])
+            wfile.write(h2_conn.data_to_send())
+            wfile.flush()
+
             h2_conn.push_stream(1, 2, [
                 (':authority', "127.0.0.1:{}".format(cls.port)),
                 (':method', 'GET'),
@@ -659,6 +654,9 @@ class TestPushPromise(_Http2Test):
                 (':path', '/pushed_stream_foo'),
                 ('foo', 'bar')
             ])
+            wfile.write(h2_conn.data_to_send())
+            wfile.flush()
+
             h2_conn.push_stream(1, 4, [
                 (':authority', "127.0.0.1:{}".format(cls.port)),
                 (':method', 'GET'),
@@ -675,12 +673,19 @@ class TestPushPromise(_Http2Test):
             wfile.flush()
 
             h2_conn.send_data(1, b'regular_stream')
-            h2_conn.send_data(2, b'pushed_stream_foo')
-            h2_conn.send_data(4, b'pushed_stream_bar')
             wfile.write(h2_conn.data_to_send())
             wfile.flush()
+
             h2_conn.end_stream(1)
+            wfile.write(h2_conn.data_to_send())
+            wfile.flush()
+
+            h2_conn.send_data(2, b'pushed_stream_foo')
             h2_conn.end_stream(2)
+            wfile.write(h2_conn.data_to_send())
+            wfile.flush()
+
+            h2_conn.send_data(4, b'pushed_stream_bar')
             h2_conn.end_stream(4)
             wfile.write(h2_conn.data_to_send())
             wfile.flush()
@@ -706,7 +711,7 @@ class TestPushPromise(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
             except:
@@ -734,11 +739,14 @@ class TestPushPromise(_Http2Test):
         assert ended_streams == 3
         assert pushed_streams == 2
 
-        bodies = [flow.response.body for flow in self.master.state.flows]
+        bodies = [flow.response.content for flow in self.master.state.flows]
         assert len(bodies) == 3
         assert b'regular_stream' in bodies
         assert b'pushed_stream_foo' in bodies
         assert b'pushed_stream_bar' in bodies
+
+        pushed_flows = [flow for flow in self.master.state.flows if 'h2-pushed-stream' in flow.metadata]
+        assert len(pushed_flows) == 2
 
     def test_push_promise_reset(self):
         client, h2_conn = self._setup_connection()
@@ -759,7 +767,7 @@ class TestPushPromise(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 events = h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
 
@@ -786,7 +794,7 @@ class TestPushPromise(_Http2Test):
         client.wfile.write(h2_conn.data_to_send())
         client.wfile.flush()
 
-        bodies = [flow.response.body for flow in self.master.state.flows if flow.response]
+        bodies = [flow.response.content for flow in self.master.state.flows if flow.response]
         assert len(bodies) >= 1
         assert b'regular_stream' in bodies
         # the other two bodies might not be transmitted before the reset
@@ -819,7 +827,7 @@ class TestConnectionLost(_Http2Test):
             try:
                 raw = b''.join(http2.read_raw_frame(client.rfile))
                 h2_conn.receive_data(raw)
-            except HttpException:
+            except exceptions.HttpException:
                 print(traceback.format_exc())
                 assert False
             except:
@@ -892,7 +900,7 @@ class TestMaxConcurrentStreams(_Http2Test):
         assert len(self.master.state.flows) == len(new_streams)
         for flow in self.master.state.flows:
             assert flow.response.status_code == 200
-            assert b"Stream-ID " in flow.response.body
+            assert b"Stream-ID " in flow.response.content
 
 
 @requires_alpn

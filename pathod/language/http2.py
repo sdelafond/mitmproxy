@@ -1,7 +1,7 @@
 import pyparsing as pp
 
-from netlib import http
-from netlib.http import user_agents, Headers
+from mitmproxy.net import http
+from mitmproxy.net.http import user_agents, Headers
 from . import base, message
 
 """
@@ -40,7 +40,7 @@ def get_header(val, headers):
     return None
 
 
-class _HeaderMixin(object):
+class _HeaderMixin:
     unique_name = None
 
     def values(self, settings):

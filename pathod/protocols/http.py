@@ -1,10 +1,10 @@
-from netlib import version
-from netlib.exceptions import TlsException
-from netlib.http import http1
+from mitmproxy import version
+from mitmproxy import exceptions
+from mitmproxy.net.http import http1
 from .. import language
 
 
-class HTTPProtocol(object):
+class HTTPProtocol:
     def __init__(self, pathod_handler):
         self.pathod_handler = pathod_handler
 
@@ -37,7 +37,7 @@ class HTTPProtocol(object):
                     options=self.pathod_handler.server.ssloptions.ssl_options,
                     alpn_select=self.pathod_handler.server.ssloptions.alpn_select,
                 )
-            except TlsException as v:
+            except exceptions.TlsException as v:
                 s = str(v)
                 lg(s)
                 return None, dict(type="error", msg=s)

@@ -2,14 +2,16 @@ import mock
 import codecs
 
 import hyperframe
-from netlib import tcp, http
-from netlib.tutils import raises
-from netlib.exceptions import TcpDisconnect
-from netlib.http import http2
+from mitmproxy.net import tcp, http
+from mitmproxy.test.tutils import raises
+from mitmproxy.net.http import http2
+from mitmproxy import exceptions
 
-from ..netlib import tservers as netlib_tservers
+from ..mitmproxy.net import tservers as net_tservers
 
 from pathod.protocols.http2 import HTTP2StateProtocol, TCPHandler
+
+from ..conftest import requires_alpn
 
 
 class TestTCPHandlerWrapper:
@@ -66,40 +68,38 @@ class TestProtocol:
         assert mock_server_method.called
 
 
-class TestCheckALPNMatch(netlib_tservers.ServerTestBase):
+@requires_alpn
+class TestCheckALPNMatch(net_tservers.ServerTestBase):
     handler = EchoHandler
     ssl = dict(
         alpn_select=b'h2',
     )
 
-    if tcp.HAS_ALPN:
-
-        def test_check_alpn(self):
-            c = tcp.TCPClient(("127.0.0.1", self.port))
-            with c.connect():
-                c.convert_to_ssl(alpn_protos=[b'h2'])
-                protocol = HTTP2StateProtocol(c)
-                assert protocol.check_alpn()
+    def test_check_alpn(self):
+        c = tcp.TCPClient(("127.0.0.1", self.port))
+        with c.connect():
+            c.convert_to_ssl(alpn_protos=[b'h2'])
+            protocol = HTTP2StateProtocol(c)
+            assert protocol.check_alpn()
 
 
-class TestCheckALPNMismatch(netlib_tservers.ServerTestBase):
+@requires_alpn
+class TestCheckALPNMismatch(net_tservers.ServerTestBase):
     handler = EchoHandler
     ssl = dict(
         alpn_select=None,
     )
 
-    if tcp.HAS_ALPN:
-
-        def test_check_alpn(self):
-            c = tcp.TCPClient(("127.0.0.1", self.port))
-            with c.connect():
-                c.convert_to_ssl(alpn_protos=[b'h2'])
-                protocol = HTTP2StateProtocol(c)
-                with raises(NotImplementedError):
-                    protocol.check_alpn()
+    def test_check_alpn(self):
+        c = tcp.TCPClient(("127.0.0.1", self.port))
+        with c.connect():
+            c.convert_to_ssl(alpn_protos=[b'h2'])
+            protocol = HTTP2StateProtocol(c)
+            with raises(NotImplementedError):
+                protocol.check_alpn()
 
 
-class TestPerformServerConnectionPreface(netlib_tservers.ServerTestBase):
+class TestPerformServerConnectionPreface(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
 
         def handle(self):
@@ -132,11 +132,11 @@ class TestPerformServerConnectionPreface(netlib_tservers.ServerTestBase):
             protocol.perform_server_connection_preface()
             assert protocol.connection_preface_performed
 
-            with raises(TcpDisconnect):
+            with raises(exceptions.TcpDisconnect):
                 protocol.perform_server_connection_preface(force=True)
 
 
-class TestPerformClientConnectionPreface(netlib_tservers.ServerTestBase):
+class TestPerformClientConnectionPreface(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
 
         def handle(self):
@@ -169,7 +169,7 @@ class TestPerformClientConnectionPreface(netlib_tservers.ServerTestBase):
             assert protocol.connection_preface_performed
 
 
-class TestClientStreamIds(object):
+class TestClientStreamIds:
     c = tcp.TCPClient(("127.0.0.1", 0))
     protocol = HTTP2StateProtocol(c)
 
@@ -183,7 +183,7 @@ class TestClientStreamIds(object):
         assert self.protocol.current_stream_id == 5
 
 
-class TestserverstreamIds(object):
+class TestserverstreamIds:
     c = tcp.TCPClient(("127.0.0.1", 0))
     protocol = HTTP2StateProtocol(c, is_server=True)
 
@@ -197,7 +197,7 @@ class TestserverstreamIds(object):
         assert self.protocol.current_stream_id == 6
 
 
-class TestApplySettings(netlib_tservers.ServerTestBase):
+class TestApplySettings(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
         def handle(self):
             # check settings acknowledgement
@@ -230,7 +230,7 @@ class TestApplySettings(netlib_tservers.ServerTestBase):
                 hyperframe.frame.SettingsFrame.INITIAL_WINDOW_SIZE] == 'deadbeef'
 
 
-class TestCreateHeaders(object):
+class TestCreateHeaders:
     c = tcp.TCPClient(("127.0.0.1", 0))
 
     def test_create_headers(self):
@@ -267,7 +267,7 @@ class TestCreateHeaders(object):
         assert bytes[2] == codecs.decode('00000209040000000163d5', 'hex_codec')
 
 
-class TestCreateBody(object):
+class TestCreateBody:
     c = tcp.TCPClient(("127.0.0.1", 0))
 
     def test_create_body_empty(self):
@@ -290,7 +290,7 @@ class TestCreateBody(object):
         assert bytes[2] == codecs.decode('0000020001000000013432', 'hex_codec')
 
 
-class TestReadRequest(netlib_tservers.ServerTestBase):
+class TestReadRequest(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
 
         def handle(self):
@@ -320,7 +320,7 @@ class TestReadRequest(netlib_tservers.ServerTestBase):
             assert req.content == b'foobar'
 
 
-class TestReadRequestRelative(netlib_tservers.ServerTestBase):
+class TestReadRequestRelative(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
         def handle(self):
             self.wfile.write(
@@ -343,7 +343,7 @@ class TestReadRequestRelative(netlib_tservers.ServerTestBase):
             assert req.path == "*"
 
 
-class TestReadRequestAbsolute(netlib_tservers.ServerTestBase):
+class TestReadRequestAbsolute(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
         def handle(self):
             self.wfile.write(
@@ -367,7 +367,7 @@ class TestReadRequestAbsolute(netlib_tservers.ServerTestBase):
             assert req.port == 22
 
 
-class TestReadResponse(netlib_tservers.ServerTestBase):
+class TestReadResponse(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
         def handle(self):
             self.wfile.write(
@@ -396,7 +396,7 @@ class TestReadResponse(netlib_tservers.ServerTestBase):
             assert resp.timestamp_end
 
 
-class TestReadEmptyResponse(netlib_tservers.ServerTestBase):
+class TestReadEmptyResponse(net_tservers.ServerTestBase):
     class handler(tcp.BaseHandler):
         def handle(self):
             self.wfile.write(
@@ -422,7 +422,7 @@ class TestReadEmptyResponse(netlib_tservers.ServerTestBase):
             assert resp.content == b''
 
 
-class TestAssembleRequest(object):
+class TestAssembleRequest:
     c = tcp.TCPClient(("127.0.0.1", 0))
 
     def test_request_simple(self):
@@ -476,7 +476,7 @@ class TestAssembleRequest(object):
             codecs.decode('000006000100000001666f6f626172', 'hex_codec')
 
 
-class TestAssembleResponse(object):
+class TestAssembleResponse:
     c = tcp.TCPClient(("127.0.0.1", 0))
 
     def test_simple(self):

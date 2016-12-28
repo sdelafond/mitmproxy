@@ -5,36 +5,38 @@ API
 ===
 
 - Errors
-    - `mitmproxy.models.flow.Error <#mitmproxy.models.flow.Error>`_
+    - `mitmproxy.flow.Error <#mitmproxy.flow.Error>`_
 - HTTP
-    - `mitmproxy.models.http.HTTPRequest <#mitmproxy.models.http.HTTPRequest>`_
-    - `mitmproxy.models.http.HTTPResponse <#mitmproxy.models.http.HTTPResponse>`_
-    - `mitmproxy.models.http.HTTPFlow <#mitmproxy.models.http.HTTPFlow>`_
+    - `mitmproxy.http.HTTPRequest <#mitmproxy.http.HTTPRequest>`_
+    - `mitmproxy.http.HTTPResponse <#mitmproxy.http.HTTPResponse>`_
+    - `mitmproxy.http.HTTPFlow <#mitmproxy.http.HTTPFlow>`_
 - Logging
-    - `mitmproxy.controller.Log <#mitmproxy.controller.Log>`_
-    - `mitmproxy.controller.LogEntry <#mitmproxy.controller.LogEntry>`_
+    - `mitmproxy.log.Log <#mitmproxy.controller.Log>`_
+    - `mitmproxy.log.LogEntry <#mitmproxy.controller.LogEntry>`_
 
 
 Errors
 ------
 
-.. autoclass:: mitmproxy.models.flow.Error
+.. autoclass:: mitmproxy.flow.Error
     :inherited-members:
 
 HTTP
 ----
 
-.. autoclass:: mitmproxy.models.http.HTTPRequest
+.. autoclass:: mitmproxy.http.HTTPRequest
     :inherited-members:
 
-.. autoclass:: mitmproxy.models.http.HTTPResponse
+.. autoclass:: mitmproxy.http.HTTPResponse
     :inherited-members:
 
-.. autoclass:: mitmproxy.models.http.HTTPFlow
+.. autoclass:: mitmproxy.http.HTTPFlow
     :inherited-members:
 
 Logging
 --------
 
-.. autoclass:: mitmproxy.controller.Log
+.. autoclass:: mitmproxy.log.Log
+    :inherited-members:
+.. autoclass:: mitmproxy.log.LogEntry
     :inherited-members:

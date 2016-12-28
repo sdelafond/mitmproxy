@@ -1,32 +1,32 @@
-from test.mitmproxy import tutils
 from threading import Thread, Event
 
 from mock import Mock
 
 from mitmproxy import controller
-from six.moves import queue
+import queue
 
 from mitmproxy.exceptions import Kill, ControlException
-from mitmproxy.proxy import DummyServer
-from netlib.tutils import raises
+from mitmproxy import proxy
+from mitmproxy import master
+from mitmproxy.test import tutils
 
 
 class TMsg:
     pass
 
 
-class TestMaster(object):
+class TestMaster:
     def test_simple(self):
-        class DummyMaster(controller.Master):
+        class DummyMaster(master.Master):
             @controller.handler
             def log(self, _):
                 m.should_exit.set()
 
             def tick(self, timeout):
                 # Speed up test
-                super(DummyMaster, self).tick(0)
+                super().tick(0)
 
-        m = DummyMaster(None)
+        m = DummyMaster(None, proxy.DummyServer(None))
         assert not m.should_exit.is_set()
         msg = TMsg()
         msg.reply = controller.DummyReply()
@@ -35,24 +35,22 @@ class TestMaster(object):
         assert m.should_exit.is_set()
 
     def test_server_simple(self):
-        m = controller.Master(None)
-        s = DummyServer(None)
-        m.add_server(s)
+        m = master.Master(None, proxy.DummyServer(None))
         m.start()
         m.shutdown()
         m.start()
         m.shutdown()
 
 
-class TestServerThread(object):
+class TestServerThread:
     def test_simple(self):
         m = Mock()
-        t = controller.ServerThread(m)
+        t = master.ServerThread(m)
         t.run()
         assert m.serve_forever.called
 
 
-class TestChannel(object):
+class TestChannel:
     def test_tell(self):
         q = queue.Queue()
         channel = controller.Channel(q, Event())
@@ -82,11 +80,11 @@ class TestChannel(object):
         done = Event()
         done.set()
         channel = controller.Channel(q, done)
-        with raises(Kill):
+        with tutils.raises(Kill):
             channel.ask("test", Mock(name="test_ask_shutdown"))
 
 
-class TestReply(object):
+class TestReply:
     def test_simple(self):
         reply = controller.Reply(42)
         assert reply.state == "unhandled"
@@ -179,7 +177,7 @@ class TestReply(object):
         reply.commit()
 
 
-class TestDummyReply(object):
+class TestDummyReply:
     def test_simple(self):
         reply = controller.DummyReply()
         for _ in range(2):

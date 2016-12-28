@@ -1,17 +1,16 @@
 import operator
 import os
 import abc
+import functools
 import pyparsing as pp
 
-import six
-from six.moves import reduce
-from netlib import strutils
-from netlib import human
+from mitmproxy.utils import strutils
+from mitmproxy.utils import human
 
 from . import generators, exceptions
 
 
-class Settings(object):
+class Settings:
 
     def __init__(
         self,
@@ -61,7 +60,7 @@ v_naked_literal = pp.MatchFirst(
 )
 
 
-class Token(object):
+class Token:
 
     """
         A token in the specification language. Tokens are immutable. The token
@@ -172,14 +171,14 @@ class TokValueGenerate(Token):
     def expr(cls):
         e = pp.Literal("@").suppress() + v_integer
 
-        u = reduce(
+        u = functools.reduce(
             operator.or_,
             [pp.Literal(i) for i in human.SIZE_UNITS.keys()]
         ).leaveWhitespace()
         e = e + pp.Optional(u, default=None)
 
         s = pp.Literal(",").suppress()
-        s += reduce(
+        s += functools.reduce(
             operator.or_,
             [pp.Literal(i) for i in generators.DATATYPES.keys()]
         )
@@ -217,7 +216,7 @@ class TokValueFile(Token):
             os.path.abspath(os.path.join(settings.staticdir, s))
         )
         uf = settings.unconstrained_file_access
-        if not uf and not s.startswith(settings.staticdir):
+        if not uf and not s.startswith(os.path.normpath(settings.staticdir)):
             raise exceptions.FileAccessDenied(
                 "File access outside of configured directory"
             )
@@ -342,7 +341,7 @@ class OptionsOrValue(_Component):
         # it to be canonical. The user can specify a different case by using a
         # string value literal.
         self.option_used = False
-        if isinstance(value, six.string_types):
+        if isinstance(value, str):
             for i in self.options:
                 # Find the exact option value in a case-insensitive way
                 if i.lower() == value.lower():

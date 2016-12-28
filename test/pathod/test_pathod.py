@@ -1,16 +1,20 @@
-from six.moves import cStringIO as StringIO
+import io
+
+import pytest
 
 from pathod import pathod
-from netlib import tcp
-from netlib.exceptions import HttpException, TlsException
+from mitmproxy.net import tcp
+from mitmproxy import exceptions
+from mitmproxy.test import tutils
 
-from . import tutils
+from . import tservers
+from ..conftest import requires_alpn
 
 
-class TestPathod(object):
+class TestPathod:
 
     def test_logging(self):
-        s = StringIO()
+        s = io.StringIO()
         p = pathod.Pathod(("127.0.0.1", 0), logfp=s)
         assert len(p.get_log()) == 0
         id = p.add_log(dict(s="foo"))
@@ -24,7 +28,7 @@ class TestPathod(object):
         assert len(p.get_log()) <= p.LOGBUF
 
 
-class TestTimeout(tutils.DaemonTests):
+class TestTimeout(tservers.DaemonTests):
     timeout = 0.01
 
     def test_timeout(self):
@@ -36,7 +40,7 @@ class TestTimeout(tutils.DaemonTests):
         assert self.d.last_log()["type"] == "timeout"
 
 
-class TestNotAfterConnect(tutils.DaemonTests):
+class TestNotAfterConnect(tservers.DaemonTests):
     ssl = False
     ssloptions = dict(
         not_after_connect=True
@@ -50,10 +54,10 @@ class TestNotAfterConnect(tutils.DaemonTests):
         assert r[0].status_code == 202
 
 
-class TestCustomCert(tutils.DaemonTests):
+class TestCustomCert(tservers.DaemonTests):
     ssl = True
     ssloptions = dict(
-        certs=[(b"*", tutils.test_data.path("data/testkey.pem"))],
+        certs=[(b"*", tutils.test_data.path("pathod/data/testkey.pem"))],
     )
 
     def test_connect(self):
@@ -64,7 +68,7 @@ class TestCustomCert(tutils.DaemonTests):
         assert "test.com" in str(r.sslinfo.certchain[0].get_subject())
 
 
-class TestSSLCN(tutils.DaemonTests):
+class TestSSLCN(tservers.DaemonTests):
     ssl = True
     ssloptions = dict(
         cn=b"foo.com"
@@ -78,7 +82,7 @@ class TestSSLCN(tutils.DaemonTests):
         assert r.sslinfo.certchain[0].get_subject().CN == "foo.com"
 
 
-class TestNohang(tutils.DaemonTests):
+class TestNohang(tservers.DaemonTests):
     nohang = True
 
     def test_nohang(self):
@@ -88,14 +92,14 @@ class TestNohang(tutils.DaemonTests):
         assert "Pauses have been disabled" in l["response"]["msg"]
 
 
-class TestHexdump(tutils.DaemonTests):
+class TestHexdump(tservers.DaemonTests):
     hexdump = True
 
     def test_hexdump(self):
         assert self.get(r"200:b'\xf0'")
 
 
-class TestNocraft(tutils.DaemonTests):
+class TestNocraft(tservers.DaemonTests):
     nocraft = True
 
     def test_nocraft(self):
@@ -104,7 +108,7 @@ class TestNocraft(tutils.DaemonTests):
         assert b"Crafting disabled" in r.content
 
 
-class CommonTests(tutils.DaemonTests):
+class CommonTests(tservers.DaemonTests):
 
     def test_binarydata(self):
         assert self.get(r"200:b'\xf0'")
@@ -157,7 +161,7 @@ class CommonTests(tutils.DaemonTests):
 
     def test_invalid_content_length(self):
         tutils.raises(
-            HttpException,
+            exceptions.HttpException,
             self.pathoc,
             ["get:/:h'content-length'='foo'"]
         )
@@ -166,7 +170,7 @@ class CommonTests(tutils.DaemonTests):
         assert "Unparseable Content Length" in l["msg"]
 
     def test_invalid_headers(self):
-        tutils.raises(HttpException, self.pathoc, ["get:/:h'\t'='foo'"])
+        tutils.raises(exceptions.HttpException, self.pathoc, ["get:/:h'\t'='foo'"])
         l = self.d.last_log()
         assert l["type"] == "error"
         assert "Invalid headers" in l["msg"]
@@ -225,7 +229,7 @@ class TestDaemon(CommonTests):
 
     def test_connect_err(self):
         tutils.raises(
-            HttpException,
+            exceptions.HttpException,
             self.pathoc,
             [r"get:'http://foo.com/p/202':da"],
             connect_to=("localhost", self.d.port)
@@ -241,7 +245,7 @@ class TestDaemonSSL(CommonTests):
         c.wbufsize = 0
         with c.connect():
             c.wfile.write(b"\0\0\0\0")
-            tutils.raises(TlsException, c.convert_to_ssl)
+            tutils.raises(exceptions.TlsException, c.convert_to_ssl)
             l = self.d.last_log()
             assert l["type"] == "error"
             assert "SSL" in l["msg"]
@@ -252,12 +256,15 @@ class TestDaemonSSL(CommonTests):
         assert self.d.last_log()["cipher"][1] > 0
 
 
-class TestHTTP2(tutils.DaemonTests):
+class TestHTTP2(tservers.DaemonTests):
     ssl = True
     nohang = True
 
-    if tcp.HAS_ALPN:
+    @requires_alpn
+    def test_http2(self):
+        r, _ = self.pathoc(["GET:/"], ssl=True, use_http2=True)
+        assert r[0].status_code == 800
 
-        def test_http2(self):
+    def test_no_http2(self, disable_alpn):
+        with pytest.raises(NotImplementedError):
             r, _ = self.pathoc(["GET:/"], ssl=True, use_http2=True)
-            assert r[0].status_code == 800

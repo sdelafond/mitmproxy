@@ -1,15 +1,15 @@
-from six.moves import cStringIO as StringIO
+import io
+from mitmproxy.test import tflow
 from mock import patch
 
 from mitmproxy import flowfilter
-
-from . import tutils
+from . import tutils as ttutils
 
 
 class TestParsing:
 
     def _dump(self, x):
-        c = StringIO()
+        c = io.StringIO()
         x.dump(fp=c)
         assert c.getvalue()
 
@@ -78,13 +78,13 @@ class TestParsing:
 class TestMatchingHTTPFlow:
 
     def req(self):
-        return tutils.tflow()
+        return tflow.tflow()
 
     def resp(self):
-        return tutils.tflow(resp=True)
+        return tflow.tflow(resp=True)
 
     def err(self):
-        return tutils.tflow(err=True)
+        return tflow.tflow(err=True)
 
     def q(self, q, o):
         return flowfilter.parse(q)(o)
@@ -223,7 +223,7 @@ class TestMatchingHTTPFlow:
 
     def test_dst(self):
         q = self.req()
-        q.server_conn = tutils.tserver_conn()
+        q.server_conn = tflow.tserver_conn()
         assert self.q("~dst address", q)
         assert not self.q("~dst foobar", q)
         assert self.q("~dst :22", q)
@@ -257,10 +257,10 @@ class TestMatchingHTTPFlow:
 class TestMatchingTCPFlow:
 
     def flow(self):
-        return tutils.ttcpflow()
+        return tflow.ttcpflow()
 
     def err(self):
-        return tutils.ttcpflow(err=True)
+        return tflow.ttcpflow(err=True)
 
     def q(self, q, o):
         return flowfilter.parse(q)(o)
@@ -302,7 +302,7 @@ class TestMatchingTCPFlow:
 
     def test_dst(self):
         f = self.flow()
-        f.server_conn = tutils.tserver_conn()
+        f.server_conn = tflow.tserver_conn()
         assert self.q("~dst address", f)
         assert not self.q("~dst foobar", f)
         assert self.q("~dst :22", f)
@@ -311,7 +311,7 @@ class TestMatchingTCPFlow:
 
     def test_and(self):
         f = self.flow()
-        f.server_conn = tutils.tserver_conn()
+        f.server_conn = tflow.tserver_conn()
         assert self.q("~b hello & ~b me", f)
         assert not self.q("~src wrongaddress & ~b hello", f)
         assert self.q("(~src :22 & ~dst :22) & ~b hello", f)
@@ -320,7 +320,7 @@ class TestMatchingTCPFlow:
 
     def test_or(self):
         f = self.flow()
-        f.server_conn = tutils.tserver_conn()
+        f.server_conn = tflow.tserver_conn()
         assert self.q("~b hello | ~b me", f)
         assert self.q("~src :22 | ~b me", f)
         assert not self.q("~src :99 | ~dst :99", f)
@@ -381,10 +381,10 @@ class TestMatchingTCPFlow:
 class TestMatchingDummyFlow:
 
     def flow(self):
-        return tutils.tdummyflow()
+        return ttutils.tdummyflow()
 
     def err(self):
-        return tutils.tdummyflow(err=True)
+        return ttutils.tdummyflow(err=True)
 
     def q(self, q, o):
         return flowfilter.parse(q)(o)
@@ -392,7 +392,7 @@ class TestMatchingDummyFlow:
     def test_filters(self):
         e = self.err()
         f = self.flow()
-        f.server_conn = tutils.tserver_conn()
+        f.server_conn = tflow.tserver_conn()
 
         assert not self.q("~a", f)
 

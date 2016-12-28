@@ -18,7 +18,7 @@ class ApacheBenchThread(Thread):
 
     def __init__(self, concurrency):
         self.concurrency = concurrency
-        super(ApacheBenchThread, self).__init__()
+        super().__init__()
 
     def run(self):
         time.sleep(2)
@@ -38,7 +38,7 @@ def main(profiler, clock_type, concurrency):
 
     if profiler == "yappi":
         yappi.set_clock_type(clock_type)
-        yappi.start(builtins=True)
+        yappi.start(addons=True)
 
     print("Start mitmdump...")
     mitmdump(["-k", "-q", "-S", "1024example"])
@@ -50,6 +50,7 @@ def main(profiler, clock_type, concurrency):
         stats = yappi.get_func_stats()
         stats.save(outfile, type='callgrind')
     print("Done.")
+
 
 if __name__ == '__main__':
     main()
