@@ -6,7 +6,7 @@ export PYBUILD_TEST_ARGS="-k-TestServerIPv6 -k-TestServerCurrentCipher -k-TestSe
 MAN_PAGES := $(shell cat debian/mitmproxy.manpages)
 
 %:
-	dh $@ --with python2 --buildsystem=pybuild
+	dh $@ --with python3 --buildsystem=pybuild
 
 override_dh_installman: $(MAN_PAGES)
 	dh_installman
