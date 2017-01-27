@@ -1,3 +1,30 @@
+mitmproxy (1.0.2-1~1.gbpbce610) unstable; urgency=medium
+
+  ** SNAPSHOT build @bce61023fe1e490be2af2743eb0c0b597ba9459d **
+
+  [ Sébastien Delafond ]
+  * snapshot
+  * adapt patch 0002
+  * update 0003
+  * snapshot
+  * remove useless deps/build-deps
+
+  [ Maximilian Hils ]
+  * fix compat with Python 3.5.0
+  * fix IO type checking
+  * bump version to 1.0.2
+
+  [ Sébastien Delafond ]
+  * dh --with python3
+  * add ruamel.yaml and sortedcontainers
+  * python3-construct >= 2.8
+  * Remove unnecessary Build-Depend on cffi (Closes: #849648)
+  * Fix Vcs-Git
+
+  [ Sebastien Delafond ]
+
+ -- Sébastien Delafond <sdelafond@gmail.com>  Fri, 27 Jan 2017 09:42:33 +0100
+
 mitmproxy (1.0.1-1~1.gbp58ec23) unstable; urgency=medium
 
   ** SNAPSHOT build @58ec2330a448241eb1543abec6638b8649e4b6c2 **
