@@ -7,7 +7,7 @@ Files: *
 Copyright: 2013–2016, Aldo Cortesi <aldo@corte.si>
 License: Expat
 
-Files: mitmproxy/contrib/tls/*
+Files: mitmproxy/contrib/tls_parser.py
 Copyright: Individual contributors
 License: BSD-3-clause or Apache-2.0
 
