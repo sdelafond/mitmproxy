@@ -43,7 +43,7 @@ Homepage: https://mitmproxy.org
 
 Package: mitmproxy
 Architecture: all
-Depends: ${misc:Depends}, ${python:Depends},
+Depends: ${misc:Depends}, ${python3:Depends},
 	 python3-openssl (>= 16.0),
 	 python3-hpack,
 	 python3-brotli (>= 0.5.1),
@@ -71,7 +71,6 @@ Depends: ${misc:Depends}, ${python:Depends},
 	 python3-ruamel.yaml,
 	 python3-sortedcontainers
 Recommends: python3-pyperclip (>= 1.5.22),
-Provides: ${python:Provides}
 Conflicts: python-netlib
 Description: SSL-capable man-in-the-middle HTTP proxy
  mitmproxy is an SSL-capable man-in-the-middle HTTP proxy. It provides
