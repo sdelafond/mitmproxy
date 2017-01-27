@@ -2,7 +2,7 @@ Source: mitmproxy
 Section: net
 Priority: optional
 Maintainer: Sebastien Delafond <seb@debian.org>
-Build-Depends: debhelper (>= 9), dh-python, libssl-dev, python3,
+Build-Depends: debhelper (>= 9), dh-python, python3,
  pandoc,
  python3-certifi,
  python3-construct (>= 2.5.2),
