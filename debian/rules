@@ -3,6 +3,8 @@
 export PYBUILD_NAME=mitmproxy
 export PYBUILD_TEST_ARGS="-k-TestServerIPv6 -k-TestServerCurrentCipher -k-TestServerCipherList"
 
+export LC_ALL=C.UTF-8
+
 MAN_PAGES := $(shell cat debian/mitmproxy.manpages)
 
 %:
