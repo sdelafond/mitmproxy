@@ -1,6 +1,6 @@
 mitmproxy (1.0.2-1) unstable; urgency=medium
 
-  * New upstream version 1.0.2 (Closes: #849556)
+  * New upstream version 1.0.2 (Closes: #849556, #852902)
   * Lintian fixes
   * Support python3 only
   * Use packaged version of Font Awesome in place of those excluded from
