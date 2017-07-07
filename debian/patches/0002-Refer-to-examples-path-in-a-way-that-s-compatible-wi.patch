@@ -12,7 +12,7 @@ index 483cb22..9984106 100644
 +++ b/test/mitmproxy/test_examples.py
 @@ -17,7 +17,7 @@ from netlib.http import cookies
  
- from . import mastertest
+ from . import tservers
  
 -example_dir = tutils.test_data.push("../examples")
 +example_dir = tutils.test_data.push("../../../../examples")
