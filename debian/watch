@@ -1,2 +1,0 @@
-version=3
-https://github.com/mitmproxy/mitmproxy/tags .*/v(\d[\d\.]*)\.tar\.gz debian uupdate

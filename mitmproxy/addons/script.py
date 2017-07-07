@@ -8,7 +8,7 @@ import types
 
 from mitmproxy import exceptions
 from mitmproxy import ctx
-from mitmproxy import events
+from mitmproxy import eventsequence
 
 
 import watchdog.events
@@ -20,7 +20,7 @@ def parse_command(command):
         Returns a (path, args) tuple.
     """
     if not command or not command.strip():
-        raise exceptions.OptionsError("Empty script command.")
+        raise ValueError("Empty script command.")
     # Windows: escape all backslashes in the path.
     if os.name == "nt":  # pragma: no cover
         backslashes = shlex.split(command, posix=False)[0].count("\\")
@@ -28,13 +28,13 @@ def parse_command(command):
     args = shlex.split(command)  # pragma: no cover
     args[0] = os.path.expanduser(args[0])
     if not os.path.exists(args[0]):
-        raise exceptions.OptionsError(
+        raise ValueError(
             ("Script file not found: %s.\r\n"
              "If your script path contains spaces, "
              "make sure to wrap it in additional quotes, e.g. -s \"'./foo bar/baz.py' --args\".") %
             args[0])
     elif os.path.isdir(args[0]):
-        raise exceptions.OptionsError("Not a file: %s" % args[0])
+        raise ValueError("Not a file: %s" % args[0])
     return args[0], args[1:]
 
 
@@ -110,11 +110,16 @@ class ReloadHandler(watchdog.events.FileSystemEventHandler):
         self.callback = callback
 
     def filter(self, event):
+        """
+            Returns True only when .py file is changed
+        """
         if event.is_directory:
             return False
         if os.path.basename(event.src_path).startswith("."):
             return False
-        return True
+        if event.src_path.endswith(".py"):
+            return True
+        return False
 
     def on_modified(self, event):
         if self.filter(event):
@@ -141,7 +146,7 @@ class Script:
         self.last_options = None
         self.should_reload = threading.Event()
 
-        for i in events.Events:
+        for i in eventsequence.Events:
             if not hasattr(self, i):
                 def mkprox():
                     evt = i
@@ -205,10 +210,13 @@ class ScriptLoader:
         An addon that manages loading scripts from options.
     """
     def run_once(self, command, flows):
-        sc = Script(command)
+        try:
+            sc = Script(command)
+        except ValueError as e:
+            raise ValueError(str(e))
         sc.load_script()
         for f in flows:
-            for evt, o in events.event_sequence(f):
+            for evt, o in eventsequence.iterate(f):
                 sc.run(evt, o)
         sc.done()
         return sc
@@ -246,7 +254,10 @@ class ScriptLoader:
                     ordered.append(current[s])
                 else:
                     ctx.log.info("Loading script: %s" % s)
-                    sc = Script(s)
+                    try:
+                        sc = Script(s)
+                    except ValueError as e:
+                        raise exceptions.OptionsError(str(e))
                     ordered.append(sc)
                     newscripts.append(sc)
 

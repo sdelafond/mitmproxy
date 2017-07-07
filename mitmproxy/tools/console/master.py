@@ -20,7 +20,6 @@ from mitmproxy import io
 from mitmproxy import log
 from mitmproxy.addons import view
 from mitmproxy.addons import intercept
-import mitmproxy.options
 from mitmproxy.tools.console import flowlist
 from mitmproxy.tools.console import flowview
 from mitmproxy.tools.console import grideditor
@@ -32,8 +31,6 @@ from mitmproxy.tools.console import signals
 from mitmproxy.tools.console import statusbar
 from mitmproxy.tools.console import window
 from mitmproxy.utils import strutils
-
-from mitmproxy.net import tcp
 
 EVENTLOG_SIZE = 10000
 
@@ -108,7 +105,7 @@ class ConsoleMaster(master.Master):
         self.logbuffer.append(e)
         if len(self.logbuffer) > EVENTLOG_SIZE:
             self.logbuffer.pop(0)
-        if self.options.focus_follow:
+        if self.options.console_focus_follow:
             self.logbuffer.set_focus(len(self.logbuffer) - 1)
 
     def sig_call_in(self, sender, seconds, callback, args=()):
@@ -148,11 +145,11 @@ class ConsoleMaster(master.Master):
         try:
             with self.handlecontext():
                 sc.run_once(command, [f])
-        except mitmproxy.exceptions.AddonError as e:
-            signals.add_log("Script error: %s" % e, "warn")
+        except ValueError as e:
+            signals.add_log("Input error: %s" % e, "warn")
 
     def toggle_eventlog(self):
-        self.options.eventlog = not self.options.eventlog
+        self.options.console_eventlog = not self.options.console_eventlog
         self.view_flowlist()
         signals.replace_view_state.send(self)
 
@@ -232,8 +229,8 @@ class ConsoleMaster(master.Master):
 
     def set_palette(self, options, updated):
         self.ui.register_palette(
-            palettes.palettes[options.palette].palette(
-                options.palette_transparent
+            palettes.palettes[options.console_palette].palette(
+                options.console_palette_transparent
             )
         )
         self.ui.clear()
@@ -255,7 +252,7 @@ class ConsoleMaster(master.Master):
         self.loop = urwid.MainLoop(
             urwid.SolidFill("x"),
             screen = self.ui,
-            handle_mouse = not self.options.no_mouse,
+            handle_mouse = not self.options.console_no_mouse,
         )
         self.ab = statusbar.ActionBar()
 
@@ -273,14 +270,6 @@ class ConsoleMaster(master.Master):
                 sys.exit(1)
 
         self.loop.set_alarm_in(0.01, self.ticker)
-        if self.options.http2 and not tcp.HAS_ALPN:  # pragma: no cover
-            def http2err(*args, **kwargs):
-                signals.status_message.send(
-                    message = "HTTP/2 disabled - OpenSSL 1.0.2+ required."
-                              " Use --no-http2 to silence this warning.",
-                    expire=5
-                )
-            self.loop.set_alarm_in(0.01, http2err)
 
         self.loop.set_alarm_in(
             0.0001,
@@ -357,7 +346,7 @@ class ConsoleMaster(master.Master):
         if self.ui.started:
             self.ui.clear()
 
-        if self.options.eventlog:
+        if self.options.console_eventlog:
             body = flowlist.BodyPile(self)
         else:
             body = flowlist.FlowListBox(self)
@@ -423,7 +412,7 @@ class ConsoleMaster(master.Master):
     def websocket_message(self, f):
         super().websocket_message(f)
         message = f.messages[-1]
-        signals.add_log(message.info, "info")
+        signals.add_log(f.message_info(message), "info")
         signals.add_log(strutils.bytes_to_escaped_str(message.content), "debug")
 
     @controller.handler
