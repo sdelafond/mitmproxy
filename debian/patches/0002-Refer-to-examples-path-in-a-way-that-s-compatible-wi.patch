@@ -7,10 +7,10 @@ Subject: Refer to examples/ path in a way that's compatible with pbuilder
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/test/mitmproxy/test_examples.py b/test/mitmproxy/test_examples.py
-index 483cb22..9984106 100644
+index f3603fc..bcaeaef 100644
 --- a/test/mitmproxy/test_examples.py
 +++ b/test/mitmproxy/test_examples.py
-@@ -17,7 +17,7 @@ from netlib.http import cookies
+@@ -16,7 +16,7 @@ from mitmproxy.net.http import cookies
  
  from . import tservers
  
