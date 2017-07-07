@@ -2,6 +2,8 @@ import traceback
 import sys
 import time
 import re
+import watchdog.events
+import pytest
 
 from mitmproxy.test import tflow
 from mitmproxy.test import tutils
@@ -10,12 +12,10 @@ from mitmproxy import exceptions
 from mitmproxy import options
 from mitmproxy import proxy
 from mitmproxy import master
-
+from mitmproxy import utils
 from mitmproxy.addons import script
 
-import watchdog.events
-
-from .. import tutils as ttutils
+from ...conftest import skip_not_windows
 
 
 def test_scriptenv():
@@ -44,35 +44,40 @@ def test_reloadhandler():
     rh = script.ReloadHandler(Called())
     assert not rh.filter(watchdog.events.DirCreatedEvent("path"))
     assert not rh.filter(watchdog.events.FileModifiedEvent("/foo/.bar"))
-    assert rh.filter(watchdog.events.FileModifiedEvent("/foo/bar"))
+    assert not rh.filter(watchdog.events.FileModifiedEvent("/foo/bar"))
+    assert rh.filter(watchdog.events.FileModifiedEvent("/foo/bar.py"))
 
     assert not rh.callback.called
     rh.on_modified(watchdog.events.FileModifiedEvent("/foo/bar"))
+    assert not rh.callback.called
+    rh.on_modified(watchdog.events.FileModifiedEvent("/foo/bar.py"))
     assert rh.callback.called
     rh.callback.called = False
 
     rh.on_created(watchdog.events.FileCreatedEvent("foo"))
+    assert not rh.callback.called
+    rh.on_created(watchdog.events.FileCreatedEvent("foo.py"))
     assert rh.callback.called
 
 
 class TestParseCommand:
     def test_empty_command(self):
-        with tutils.raises(exceptions.OptionsError):
+        with pytest.raises(ValueError):
             script.parse_command("")
 
-        with tutils.raises(exceptions.OptionsError):
+        with pytest.raises(ValueError):
             script.parse_command("  ")
 
     def test_no_script_file(self):
-        with tutils.raises("not found"):
+        with pytest.raises(Exception, match="not found"):
             script.parse_command("notfound")
 
         with tutils.tmpdir() as dir:
-            with tutils.raises("not a file"):
+            with pytest.raises(Exception, match="Not a file"):
                 script.parse_command(dir)
 
     def test_parse_args(self):
-        with tutils.chdir(tutils.test_data.dirname):
+        with utils.chdir(tutils.test_data.dirname):
             assert script.parse_command(
                 "mitmproxy/data/addonscripts/recorder.py"
             ) == ("mitmproxy/data/addonscripts/recorder.py", [])
@@ -83,9 +88,9 @@ class TestParseCommand:
                 "mitmproxy/data/addonscripts/recorder.py 'foo bar'"
             ) == ("mitmproxy/data/addonscripts/recorder.py", ["foo bar"])
 
-    @ttutils.skip_not_windows
+    @skip_not_windows
     def test_parse_windows(self):
-        with tutils.chdir(tutils.test_data.dirname):
+        with utils.chdir(tutils.test_data.dirname):
             assert script.parse_command(
                 "mitmproxy/data\\addonscripts\\recorder.py"
             ) == ("mitmproxy/data\\addonscripts\\recorder.py", [])
@@ -202,13 +207,10 @@ class TestScriptLoader:
         evts = [i[1] for i in sc.ns.call_log]
         assert evts == ['start', 'requestheaders', 'request', 'responseheaders', 'response', 'done']
 
+        f = tflow.tflow(resp=True)
         with m.handlecontext():
-            tutils.raises(
-                "file not found",
-                sl.run_once,
-                "nonexistent",
-                [f]
-            )
+            with pytest.raises(Exception, match="file not found"):
+                sl.run_once("nonexistent", [f])
 
     def test_simple(self):
         o = options.Options(scripts=[])
@@ -229,7 +231,15 @@ class TestScriptLoader:
         o = options.Options(scripts=["one", "one"])
         m = master.Master(o, proxy.DummyServer())
         sc = script.ScriptLoader()
-        tutils.raises(exceptions.OptionsError, m.addons.add, o, sc)
+        with pytest.raises(exceptions.OptionsError):
+            m.addons.add(o, sc)
+
+    def test_nonexistent(self):
+        o = options.Options(scripts=["nonexistent"])
+        m = master.Master(o, proxy.DummyServer())
+        sc = script.ScriptLoader()
+        with pytest.raises(exceptions.OptionsError):
+            m.addons.add(o, sc)
 
     def test_order(self):
         rec = tutils.test_data.path("mitmproxy/data/addonscripts/recorder.py")

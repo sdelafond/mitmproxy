@@ -19,3 +19,5 @@ bower_components
 *.map
 sslkeylogfile.log
 .tox/
+.python-version
+coverage.xml

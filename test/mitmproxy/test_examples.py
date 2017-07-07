@@ -1,20 +1,20 @@
 import json
-
-from mitmproxy.test import tflow
 import os
 import shlex
+import pytest
 
 from mitmproxy import options
 from mitmproxy import contentviews
 from mitmproxy import proxy
-from mitmproxy.addons import script
 from mitmproxy import master
+from mitmproxy.addons import script
 
+from mitmproxy.test import tflow
 from mitmproxy.test import tutils
 from mitmproxy.net.http import Headers
 from mitmproxy.net.http import cookies
 
-from . import mastertest
+from . import tservers
 
 example_dir = tutils.test_data.push("../examples")
 
@@ -38,7 +38,7 @@ def tscript(cmd, args=""):
     return m, sc
 
 
-class TestScripts(mastertest.MasterTest):
+class TestScripts(tservers.MasterTest):
     def test_add_header(self):
         m, _ = tscript("simple/add_header.py")
         f = tflow.tflow(resp=tutils.tresp())
@@ -52,7 +52,7 @@ class TestScripts(mastertest.MasterTest):
         assert any(b'tEST!' in val[0][1] for val in fmt)
 
     def test_iframe_injector(self):
-        with tutils.raises(ScriptError):
+        with pytest.raises(ScriptError):
             tscript("simple/modify_body_inject_iframe.py")
 
         m, sc = tscript("simple/modify_body_inject_iframe.py", "http://example.org/evil_iframe")
@@ -103,6 +103,28 @@ class TestScripts(mastertest.MasterTest):
         m.request(f)
         assert f.response.content == b"Hello World"
 
+    def test_dns_spoofing(self):
+        m, sc = tscript("complex/dns_spoofing.py")
+        original_host = "example.com"
+
+        host_header = Headers(host=original_host)
+        f = tflow.tflow(req=tutils.treq(headers=host_header, port=80))
+
+        m.requestheaders(f)
+
+        # Rewrite by reverse proxy mode
+        f.request.scheme = "https"
+        f.request.host = "mitmproxy.org"
+        f.request.port = 443
+
+        m.request(f)
+
+        assert f.request.scheme == "http"
+        assert f.request.host == original_host
+        assert f.request.port == 80
+
+        assert f.request.headers["Host"] == original_host
+
 
 class TestHARDump:
 
@@ -119,7 +141,7 @@ class TestHARDump:
         )
 
     def test_no_file_arg(self):
-        with tutils.raises(ScriptError):
+        with pytest.raises(ScriptError):
             tscript("complex/har_dump.py")
 
     def test_simple(self):

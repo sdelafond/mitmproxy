@@ -2,6 +2,7 @@ import itertools
 import sys
 
 import click
+import shutil
 
 import typing  # noqa
 
@@ -124,6 +125,9 @@ class Dumper:
             url = flow.request.pretty_url
         else:
             url = flow.request.url
+        terminalWidthLimit = max(shutil.get_terminal_size()[0] - 25, 50)
+        if self.flow_detail < 1 and len(url) > terminalWidthLimit:
+            url = url[:terminalWidthLimit] + "…"
         url = click.style(strutils.escape_control_characters(url), bold=True)
 
         http_version = ""
@@ -234,7 +238,7 @@ class Dumper:
     def websocket_message(self, f):
         if self.match(f):
             message = f.messages[-1]
-            self.echo(message.info)
+            self.echo(f.message_info(message))
             if self.flow_detail >= 3:
                 self._echo_message(message)
 

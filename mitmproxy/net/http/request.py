@@ -1,5 +1,6 @@
 import re
 import urllib
+from typing import Optional
 
 from mitmproxy.types import multidict
 from mitmproxy.utils import strutils
@@ -115,24 +116,24 @@ class Request(message.Message):
         """
         HTTP request method, e.g. "GET".
         """
-        return message._native(self.data.method).upper()
+        return self.data.method.decode("utf-8", "surrogateescape").upper()
 
     @method.setter
     def method(self, method):
-        self.data.method = message._always_bytes(method)
+        self.data.method = strutils.always_bytes(method, "utf-8", "surrogateescape")
 
     @property
     def scheme(self):
         """
         HTTP request scheme, which should be "http" or "https".
         """
-        if not self.data.scheme:
-            return self.data.scheme
-        return message._native(self.data.scheme)
+        if self.data.scheme is None:
+            return None
+        return self.data.scheme.decode("utf-8", "surrogateescape")
 
     @scheme.setter
     def scheme(self, scheme):
-        self.data.scheme = message._always_bytes(scheme)
+        self.data.scheme = strutils.always_bytes(scheme, "utf-8", "surrogateescape")
 
     @property
     def host(self):
@@ -164,11 +165,44 @@ class Request(message.Message):
         self.data.host = host
 
         # Update host header
-        if "host" in self.headers:
-            if host:
-                self.headers["host"] = host
+        if self.host_header is not None:
+            self.host_header = host
+
+    @property
+    def host_header(self) -> Optional[str]:
+        """
+        The request's host/authority header.
+
+        This property maps to either ``request.headers["Host"]`` or
+        ``request.headers[":authority"]``, depending on whether it's HTTP/1.x or HTTP/2.0.
+        """
+        if ":authority" in self.headers:
+            return self.headers[":authority"]
+        if "Host" in self.headers:
+            return self.headers["Host"]
+        return None
+
+    @host_header.setter
+    def host_header(self, val: Optional[str]) -> None:
+        if val is None:
+            self.headers.pop("Host", None)
+            self.headers.pop(":authority", None)
+        elif self.host_header is not None:
+            # Update any existing headers.
+            if ":authority" in self.headers:
+                self.headers[":authority"] = val
+            if "Host" in self.headers:
+                self.headers["Host"] = val
+        else:
+            # Only add the correct new header.
+            if self.http_version.upper().startswith("HTTP/2"):
+                self.headers[":authority"] = val
             else:
-                self.headers.pop("host")
+                self.headers["Host"] = val
+
+    @host_header.deleter
+    def host_header(self):
+        self.host_header = None
 
     @property
     def port(self):
@@ -190,11 +224,11 @@ class Request(message.Message):
         if self.data.path is None:
             return None
         else:
-            return message._native(self.data.path)
+            return self.data.path.decode("utf-8", "surrogateescape")
 
     @path.setter
     def path(self, path):
-        self.data.path = message._always_bytes(path)
+        self.data.path = strutils.always_bytes(path, "utf-8", "surrogateescape")
 
     @property
     def url(self):
@@ -211,9 +245,10 @@ class Request(message.Message):
 
     def _parse_host_header(self):
         """Extract the host and port from Host header"""
-        if "host" not in self.headers:
+        host = self.host_header
+        if not host:
             return None, None
-        host, port = self.headers["host"], None
+        port = None
         m = host_header_re.match(host)
         if m:
             host = m.group("host").strip("[]")
@@ -373,7 +408,7 @@ class Request(message.Message):
         This will overwrite the existing content if there is one.
         """
         self.headers["content-type"] = "application/x-www-form-urlencoded"
-        self.content = mitmproxy.net.http.url.encode(form_data).encode()
+        self.content = mitmproxy.net.http.url.encode(form_data, self.content.decode()).encode()
 
     @urlencoded_form.setter
     def urlencoded_form(self, value):

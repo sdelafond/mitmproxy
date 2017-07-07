@@ -35,6 +35,7 @@ def _mkhelp():
         ("W", "stream flows to file"),
         ("X", "kill and delete flow, even if it's mid-intercept"),
         ("z", "clear flow list or eventlog"),
+        ("Z", "clear unmarked flows"),
         ("tab", "tab between eventlog and flow list"),
         ("enter", "view flow"),
         ("|", "run script on this flow"),
@@ -337,9 +338,10 @@ class FlowListBox(urwid.ListBox):
         )
 
     def new_request(self, url, method):
-        parts = mitmproxy.net.http.url.parse(str(url))
-        if not parts:
-            signals.status_message.send(message="Invalid Url")
+        try:
+            parts = mitmproxy.net.http.url.parse(str(url))
+        except ValueError as e:
+            signals.status_message.send(message = "Invalid URL: " + str(e))
             return
         scheme, host, port, path = parts
         f = self.master.create_request(method, scheme, host, port, path)
@@ -354,6 +356,8 @@ class FlowListBox(urwid.ListBox):
                     self.master.view.update(f)
         elif key == "z":
             self.master.view.clear()
+        elif key == "Z":
+            self.master.view.clear_not_marked()
         elif key == "e":
             self.master.toggle_eventlog()
         elif key == "g":
@@ -387,7 +391,7 @@ class FlowListBox(urwid.ListBox):
             lookup = dict([(i[0], i[1]) for i in view.orders])
 
             def change_order(k):
-                self.master.options.order = lookup[k]
+                self.master.options.console_order = lookup[k]
 
             signals.status_prompt_onekey.send(
                 prompt = "Order",
@@ -396,10 +400,10 @@ class FlowListBox(urwid.ListBox):
             )
         elif key == "F":
             o = self.master.options
-            o.focus_follow = not o.focus_follow
+            o.console_focus_follow = not o.console_focus_follow
         elif key == "v":
-            val = not self.master.options.order_reversed
-            self.master.options.order_reversed = val
+            val = not self.master.options.console_order_reversed
+            self.master.options.console_order_reversed = val
         elif key == "W":
             if self.master.options.streamfile:
                 self.master.options.streamfile = None

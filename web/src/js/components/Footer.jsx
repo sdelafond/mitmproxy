@@ -8,7 +8,7 @@ Footer.propTypes = {
 
 function Footer({ settings }) {
     let {mode, intercept, showhost, no_upstream_cert, rawtcp, http2, websocket, anticache, anticomp,
-            stickyauth, stickycookie, stream_large_bodies, listen_host, listen_port} = settings;
+            stickyauth, stickycookie, stream_large_bodies, listen_host, listen_port, version} = settings;
     return (
         <footer>
             {mode && mode != "regular" && (
@@ -26,8 +26,8 @@ function Footer({ settings }) {
             {rawtcp && (
                 <span className="label label-success">raw-tcp</span>
             )}
-            {http2 && (
-                <span className="label label-success">http2</span>
+            {!http2 && (
+                <span className="label label-success">no-http2</span>
             )}
             {!websocket && (
                 <span className="label label-success">no-websocket</span>
@@ -49,7 +49,10 @@ function Footer({ settings }) {
             )}
             <div className="pull-right">
             <span className="label label-primary" title="HTTP Proxy Server Address">
-            [{listen_host || "*"}:{listen_port}]
+            {listen_host || "*"}:{listen_port}
+            </span>
+            <span className="label label-info" title="Mitmproxy Version">
+            v{version}
             </span>
             </div>
         </footer>

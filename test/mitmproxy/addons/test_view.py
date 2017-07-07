@@ -1,5 +1,6 @@
+import pytest
+
 from mitmproxy.test import tflow
-from mitmproxy.test import tutils
 
 from mitmproxy.addons import view
 from mitmproxy import flowfilter
@@ -19,15 +20,15 @@ class Options(options.Options):
         self,
         *,
         filter=None,
-        order=None,
-        order_reversed=False,
-        focus_follow=False,
+        console_order=None,
+        console_order_reversed=False,
+        console_focus_follow=False,
         **kwargs
     ):
         self.filter = filter
-        self.order = order
-        self.order_reversed = order_reversed
-        self.focus_follow = focus_follow
+        self.console_order = console_order
+        self.console_order_reversed = console_order_reversed
+        self.console_focus_follow = console_focus_follow
         super().__init__(**kwargs)
 
 
@@ -42,7 +43,7 @@ def test_order_refresh():
 
     tf = tflow.tflow(resp=True)
     with taddons.context(options=Options()) as tctx:
-        tctx.configure(v, order="time")
+        tctx.configure(v, console_order="time")
         v.add(tf)
         tf.request.timestamp_start = 1
         assert not sargs
@@ -73,12 +74,15 @@ def test_simple():
     assert v.store_count() == 0
     v.request(f)
     assert list(v) == [f]
+    assert v.get_by_id(f.id)
+    assert not v.get_by_id("nonexistent")
 
-    # These all just call udpate
+    # These all just call update
     v.error(f)
     v.response(f)
     v.intercept(f)
     v.resume(f)
+    v.kill(f)
     assert list(v) == [f]
 
     v.request(f)
@@ -103,6 +107,13 @@ def test_simple():
     v.request(f3)
     assert list(v) == [f, f3, f2]
     assert len(v._store) == 3
+
+    f.marked = not f.marked
+    f2.marked = not f2.marked
+    v.clear_not_marked()
+    assert list(v) == [f, f2]
+    assert len(v) == 2
+    assert len(v._store) == 2
 
     v.clear()
     assert len(v) == 0
@@ -145,12 +156,12 @@ def test_order():
         v.request(tft(method="put", start=4))
         assert [i.request.timestamp_start for i in v] == [1, 2, 3, 4]
 
-        tctx.configure(v, order="method")
+        tctx.configure(v, console_order="method")
         assert [i.request.method for i in v] == ["GET", "GET", "PUT", "PUT"]
         v.set_reversed(True)
         assert [i.request.method for i in v] == ["PUT", "PUT", "GET", "GET"]
 
-        tctx.configure(v, order="time")
+        tctx.configure(v, console_order="time")
         assert [i.request.timestamp_start for i in v] == [4, 3, 2, 1]
 
         v.set_reversed(False)
@@ -167,8 +178,10 @@ def test_reversed():
     assert v[0].request.timestamp_start == 3
     assert v[-1].request.timestamp_start == 1
     assert v[2].request.timestamp_start == 1
-    tutils.raises(IndexError, v.__getitem__, 5)
-    tutils.raises(IndexError, v.__getitem__, -5)
+    with pytest.raises(IndexError):
+        v[5]
+    with pytest.raises(IndexError):
+        v[-5]
 
     assert v._bisect(v[0]) == 1
     assert v._bisect(v[2]) == 3
@@ -268,7 +281,7 @@ def test_signals():
 def test_focus_follow():
     v = view.View()
     with taddons.context(options=Options()) as tctx:
-        tctx.configure(v, focus_follow=True, filter="~m get")
+        tctx.configure(v, console_focus_follow=True, filter="~m get")
 
         v.add(tft(start=5))
         assert v.focus.index == 0
@@ -311,8 +324,10 @@ def test_focus():
     assert f.flow is v[0]
 
     # Try to set to something not in view
-    tutils.raises(ValueError, f.__setattr__, "flow", tft())
-    tutils.raises(ValueError, f.__setattr__, "index", 99)
+    with pytest.raises(ValueError):
+        f.__setattr__("flow", tft())
+    with pytest.raises(ValueError):
+        f.__setattr__("index", 99)
 
     v.add(tft(start=0))
     assert f.index == 1
@@ -359,13 +374,15 @@ def test_settings():
     v = view.View()
     f = tft()
 
-    tutils.raises(KeyError, v.settings.__getitem__, f)
+    with pytest.raises(KeyError):
+        v.settings[f]
     v.add(f)
     v.settings[f]["foo"] = "bar"
     assert v.settings[f]["foo"] == "bar"
     assert len(list(v.settings)) == 1
     v.remove(f)
-    tutils.raises(KeyError, v.settings.__getitem__, f)
+    with pytest.raises(KeyError):
+        v.settings[f]
     assert not v.settings.keys()
 
     v.add(f)
@@ -379,14 +396,16 @@ def test_configure():
     v = view.View()
     with taddons.context(options=Options()) as tctx:
         tctx.configure(v, filter="~q")
-        tutils.raises("invalid interception filter", tctx.configure, v, filter="~~")
+        with pytest.raises(Exception, match="Invalid interception filter"):
+            tctx.configure(v, filter="~~")
 
-        tctx.configure(v, order="method")
-        tutils.raises("unknown flow order", tctx.configure, v, order="no")
+        tctx.configure(v, console_order="method")
+        with pytest.raises(Exception, match="Unknown flow order"):
+            tctx.configure(v, console_order="no")
 
-        tctx.configure(v, order_reversed=True)
+        tctx.configure(v, console_order_reversed=True)
 
-        tctx.configure(v, order=None)
+        tctx.configure(v, console_order=None)
 
-        tctx.configure(v, focus_follow=True)
+        tctx.configure(v, console_focus_follow=True)
         assert v.focus_follow

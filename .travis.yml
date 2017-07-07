@@ -5,6 +5,8 @@ env:
   global:
     - CI_DEPS=codecov>=2.0.5
     - CI_COMMANDS=codecov
+git:
+  depth: 10000
 
 matrix:
   fast_finish: true
@@ -42,11 +44,9 @@ matrix:
           packages:
             - libssl-dev
     - python: 3.5
+      env: TOXENV=individual_coverage
+    - python: 3.5
       env: TOXENV=docs
-      git:
-        depth: 10000
-  allow_failures:
-    - python: pypy
 
 install:
   - |
@@ -63,7 +63,7 @@ install:
   - pip install tox
 
 script:
-  - tox -- --cov mitmproxy --cov pathod -v
+  - tox -- --verbose --cov-report=term
   - |
     if [[ $BDIST == "1" ]]
     then
