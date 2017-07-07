@@ -1,10 +1,11 @@
 From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
 Date: Fri, 7 Jul 2017 11:58:22 +0200
-Subject: Remove coverage* entries from setup.cfg
+Subject: Do not call full_coverage
 
 ---
- setup.cfg | 102 --------------------------------------------------------------
- 1 file changed, 102 deletions(-)
+ setup.cfg        | 102 -------------------------------------------------------
+ test/conftest.py |   2 +-
+ 2 files changed, 1 insertion(+), 103 deletions(-)
 
 diff --git a/setup.cfg b/setup.cfg
 index 52f51f2..775f457 100644
@@ -116,3 +117,16 @@ index 52f51f2..775f457 100644
 -    pathod/protocols/http2.py
 -    pathod/protocols/websockets.py
 -    pathod/test.py
+diff --git a/test/conftest.py b/test/conftest.py
+index b4e1da9..c0d699f 100644
+--- a/test/conftest.py
++++ b/test/conftest.py
+@@ -6,7 +6,7 @@ from contextlib import contextmanager
+ 
+ import mitmproxy.net.tcp
+ 
+-pytest_plugins = ('test.full_coverage_plugin',)
++#pytest_plugins = ('test.full_coverage_plugin',)
+ 
+ requires_alpn = pytest.mark.skipif(
+     not mitmproxy.net.tcp.HAS_ALPN,
