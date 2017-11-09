@@ -1,0 +1,21 @@
+From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
+Date: Thu, 9 Nov 2017 16:46:29 +0100
+Subject: brotli is packaged as python3-brotli and not python3-brotlipy
+
+---
+ setup.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/setup.py b/setup.py
+index 70bb7ca..20152d1 100644
+--- a/setup.py
++++ b/setup.py
+@@ -81,7 +81,7 @@ setup(
+         "tornado>=4.3",
+         "urwid>=1.3.1, <1.4",
+         "watchdog>=0.8.3, <0.9",
+-        "brotlipy>=0.5.1, <0.7",
++        "brotli>=0.5.1, <0.7",
+         "sortedcontainers>=1.5.4, <1.6",
+         # transitive from cryptography, we just blacklist here.
+         # https://github.com/pypa/setuptools/issues/861
