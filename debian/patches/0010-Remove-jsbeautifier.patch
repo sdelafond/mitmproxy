@@ -1,0 +1,20 @@
+From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
+Date: Thu, 9 Nov 2017 17:21:29 +0100
+Subject: Remove jsbeautifier
+
+---
+ setup.py | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/setup.py b/setup.py
+index 20152d1..bbd4a65 100644
+--- a/setup.py
++++ b/setup.py
+@@ -69,7 +69,6 @@ setup(
+         "h2>=2.5.1",
+         "html2text>=2016.1.8, <=2016.9.19",
+         "hyperframe>=4.0.1",
+-        "jsbeautifier>=1.6.3, <1.7",
+         "kaitaistruct>=0.6",
+         "passlib>=1.6.5, <1.8",
+         "pyasn1>=0.1.9, <0.3",

@@ -7,3 +7,4 @@
 0007-Remove-conflict-on-h2-3.patch
 0008-Remove-conflict-on-cryptography-1.9.patch
 0009-brotli-is-packaged-as-python3-brotli-and-not-python3.patch
+0010-Remove-jsbeautifier.patch
