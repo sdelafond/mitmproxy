@@ -1,3 +1,4 @@
 0002-Refer-to-examples-path-in-a-way-that-s-compatible-wi.patch
 0003-remove-chrome-devtools-LICENSE.patch
 0003-Do-not-call-full_coverage.patch
+0004-Remove-conflict-on-tornado-4.5.patch
