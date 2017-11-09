@@ -2,3 +2,4 @@
 0003-remove-chrome-devtools-LICENSE.patch
 0003-Do-not-call-full_coverage.patch
 0004-Remove-conflict-on-tornado-4.5.patch
+0005-Remove-conflict-on-kaitaistruct-0.7.patch
