@@ -1,6 +1,7 @@
 mitmproxy (2.0.2-1) UNRELEASED; urgency=medium
 
-  * Imported Upstream version 2.0.2 (Closes: #869615, #867278, #867250, #849556, #849648)
+  * Imported Upstream version 2.0.2 (Closes: #869615, #867278, #867250,
+    #849556, #849648)
 
  -- Sebastien Delafond <seb@debian.org>  Thu, 09 Nov 2017 14:59:34 +0100
 
