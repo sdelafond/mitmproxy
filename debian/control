@@ -91,4 +91,4 @@ Description: SSL-capable man-in-the-middle HTTP proxy
   - save HTTP conversations for later replay and analysis
   - replay both HTTP clients and servers
   - make scripted changes to HTTP traffic using Python
-  - SSL interception certs generated on the fly 
+  - SSL interception certs generated on the fly
