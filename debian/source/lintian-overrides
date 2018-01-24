@@ -1,6 +1,6 @@
-mitmproxy source: source-is-missing libmproxy/static/bootstrap.min.js
-mitmproxy source: source-is-missing libmproxy/static/jquery-1.10.1.min.js
-mitmproxy source: source-is-missing libmproxy/static/jquery.localscroll-min.js
-mitmproxy source: source-is-missing libmproxy/static/jquery.scrollTo-min.js
+mitmproxy source: debian-watch-may-check-gpg-signature
+mitmproxy source: source-contains-prebuilt-javascript-object mitmproxy/tools/web/static/app.js line length is 565 characters (>512)
 mitmproxy source: source-is-missing mitmproxy/tools/web/static/app.js line length is 565 characters (>512)
+mitmproxy source: insane-line-length-in-source-file mitmproxy/tools/web/static/app.js line length is 568 characters (>512)
+mitmproxy source: source-contains-prebuilt-javascript-object mitmproxy/tools/web/static/vendor.js line length is 488 characters (>256)
 mitmproxy source: source-is-missing mitmproxy/tools/web/static/vendor.js line length is 488 characters (>256)
