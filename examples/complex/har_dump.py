@@ -4,38 +4,36 @@ This inline script can be used to dump flows as HAR files.
 
 
 import json
-import sys
 import base64
 import zlib
 import os
+import typing  # noqa
 
 from datetime import datetime
-import pytz
+from datetime import timezone
 
 import mitmproxy
 
+from mitmproxy import connections  # noqa
 from mitmproxy import version
+from mitmproxy import ctx
 from mitmproxy.utils import strutils
 from mitmproxy.net.http import cookies
 
-HAR = {}
+HAR = {}  # type: typing.Dict
 
 # A list of server seen till now is maintained so we can avoid
 # using 'connect' time for entries that use an existing connection.
-SERVERS_SEEN = set()
+SERVERS_SEEN = set()  # type: typing.Set[connections.ServerConnection]
 
 
-def start():
-    """
-        Called once on script startup before any other events.
-    """
-    if len(sys.argv) != 2:
-        raise ValueError(
-            'Usage: -s "har_dump.py filename" '
-            '(- will output to stdout, filenames ending with .zhar '
-            'will result in compressed har)'
-        )
+def load(l):
+    l.add_option(
+        "hardump", str, "", "HAR dump path.",
+    )
 
+
+def configure(updated):
     HAR.update({
         "log": {
             "version": "1.2",
@@ -62,8 +60,8 @@ def response(flow):
         connect_time = (flow.server_conn.timestamp_tcp_setup -
                         flow.server_conn.timestamp_start)
 
-        if flow.server_conn.timestamp_ssl_setup is not None:
-            ssl_time = (flow.server_conn.timestamp_ssl_setup -
+        if flow.server_conn.timestamp_tls_setup is not None:
+            ssl_time = (flow.server_conn.timestamp_tls_setup -
                         flow.server_conn.timestamp_tcp_setup)
 
         SERVERS_SEEN.add(flow.server_conn)
@@ -89,7 +87,7 @@ def response(flow):
     # Timings set to -1 will be ignored as per spec.
     full_time = sum(v for v in timings.values() if v > -1)
 
-    started_date_time = format_datetime(datetime.utcfromtimestamp(flow.request.timestamp_start))
+    started_date_time = datetime.fromtimestamp(flow.request.timestamp_start, timezone.utc).isoformat()
 
     # Response body size and encoding
     response_body_size = len(flow.response.raw_content)
@@ -147,7 +145,7 @@ def response(flow):
         }
 
     if flow.server_conn.connected():
-        entry["serverIPAddress"] = str(flow.server_conn.ip_address.address[0])
+        entry["serverIPAddress"] = str(flow.server_conn.ip_address[0])
 
     HAR["log"]["entries"].append(entry)
 
@@ -156,25 +154,20 @@ def done():
     """
         Called once on script shutdown, after any other events.
     """
-    dump_file = sys.argv[1]
+    if ctx.options.hardump:
+        json_dump = json.dumps(HAR, indent=2)  # type: str
 
-    json_dump = json.dumps(HAR, indent=2)  # type: str
+        if ctx.options.hardump == '-':
+            mitmproxy.ctx.log(json_dump)
+        else:
+            raw = json_dump.encode()  # type: bytes
+            if ctx.options.hardump.endswith('.zhar'):
+                raw = zlib.compress(raw, 9)
 
-    if dump_file == '-':
-        mitmproxy.ctx.log(json_dump)
-    else:
-        raw = json_dump.encode()  # type: bytes
-        if dump_file.endswith('.zhar'):
-            raw = zlib.compress(raw, 9)
+            with open(os.path.expanduser(ctx.options.hardump), "wb") as f:
+                f.write(raw)
 
-        with open(os.path.expanduser(dump_file), "wb") as f:
-            f.write(raw)
-
-        mitmproxy.ctx.log("HAR dump finished (wrote %s bytes to file)" % len(json_dump))
-
-
-def format_datetime(dt):
-    return dt.replace(tzinfo=pytz.timezone("UTC")).isoformat()
+            mitmproxy.ctx.log("HAR dump finished (wrote %s bytes to file)" % len(json_dump))
 
 
 def format_cookies(cookie_list):
@@ -198,7 +191,7 @@ def format_cookies(cookie_list):
         # Expiration time needs to be formatted
         expire_ts = cookies.get_expiration_ts(attrs)
         if expire_ts is not None:
-            cookie_har["expires"] = format_datetime(datetime.fromtimestamp(expire_ts))
+            cookie_har["expires"] = datetime.fromtimestamp(expire_ts, timezone.utc).isoformat()
 
         rv.append(cookie_har)
 
@@ -210,7 +203,7 @@ def format_request_cookies(fields):
 
 
 def format_response_cookies(fields):
-    return format_cookies((c[0], c[1].value, c[1].attrs) for c in fields)
+    return format_cookies((c[0], c[1][0], c[1][1]) for c in fields)
 
 
 def name_value(obj):

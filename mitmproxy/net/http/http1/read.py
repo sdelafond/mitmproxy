@@ -210,7 +210,11 @@ def expected_http_body_size(request, response=None):
         return None
     if "content-length" in headers:
         try:
-            size = int(headers["content-length"])
+            sizes = headers.get_all("content-length")
+            different_content_length_headers = any(x != sizes[0] for x in sizes)
+            if different_content_length_headers:
+                raise exceptions.HttpSyntaxException("Conflicting Content Length Headers")
+            size = int(sizes[0])
             if size < 0:
                 raise ValueError()
             return size
@@ -271,7 +275,9 @@ def _parse_authority_form(hostport):
             ValueError, if the input is malformed
     """
     try:
-        host, port = hostport.split(b":")
+        host, port = hostport.rsplit(b":", 1)
+        if host.startswith(b"[") and host.endswith(b"]"):
+            host = host[1:-1]
         port = int(port)
         if not check.is_valid_host(host) or not check.is_valid_port(port):
             raise ValueError()

@@ -11,6 +11,8 @@ MANIFEST
 .cache/
 .tox*/
 build/
+dist/
+mitmproxy/contrib/kaitaistruct/*.ksy
 
 # UI
 
@@ -21,3 +23,5 @@ sslkeylogfile.log
 .tox/
 .python-version
 coverage.xml
+web/coverage/
+.mypy_cache/

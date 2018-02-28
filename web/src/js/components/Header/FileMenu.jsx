@@ -1,13 +1,16 @@
-import React, { Component, PropTypes } from 'react'
+import React, { Component } from 'react'
+import PropTypes from 'prop-types'
 import { connect } from 'react-redux'
 import FileChooser from '../common/FileChooser'
 import Dropdown, {Divider} from '../common/Dropdown'
 import * as flowsActions from '../../ducks/flows'
+import * as modalActions from '../../ducks/ui/modal'
+import HideInStatic from "../common/HideInStatic";
 
 FileMenu.propTypes = {
     clearFlows: PropTypes.func.isRequired,
     loadFlows: PropTypes.func.isRequired,
-    saveFlows: PropTypes.func.isRequired
+    saveFlows: PropTypes.func.isRequired,
 }
 
 FileMenu.onNewClick = (e, clearFlows) => {
@@ -16,7 +19,7 @@ FileMenu.onNewClick = (e, clearFlows) => {
         clearFlows()
 }
 
-function FileMenu ({clearFlows, loadFlows, saveFlows}) {
+export function FileMenu ({clearFlows, loadFlows, saveFlows}) {
      return (
         <Dropdown className="pull-left" btnClass="special" text="mitmproxy">
             <a href="#" onClick={e => FileMenu.onNewClick(e, clearFlows)}>
@@ -33,12 +36,13 @@ function FileMenu ({clearFlows, loadFlows, saveFlows}) {
                 &nbsp;Save...
             </a>
 
+            <HideInStatic>
             <Divider/>
-
             <a href="http://mitm.it/" target="_blank">
                 <i className="fa fa-fw fa-external-link"></i>
                 &nbsp;Install Certificates...
             </a>
+            </HideInStatic>
         </Dropdown>
     )
 }

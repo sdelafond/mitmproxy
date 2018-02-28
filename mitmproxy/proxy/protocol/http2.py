@@ -15,8 +15,9 @@ from mitmproxy.proxy.protocol import base
 from mitmproxy.proxy.protocol import http as httpbase
 import mitmproxy.net.http
 from mitmproxy.net import tcp
-from mitmproxy.types import basethread
+from mitmproxy.coretypes import basethread
 from mitmproxy.net.http import http2, headers
+from mitmproxy.utils import human
 
 
 class SafeH2Connection(connection.H2Connection):
@@ -62,7 +63,7 @@ class SafeH2Connection(connection.H2Connection):
                 raise_zombie(self.lock.release)
                 max_outbound_frame_size = self.max_outbound_frame_size
                 frame_chunk = chunk[position:position + max_outbound_frame_size]
-                if self.local_flow_control_window(stream_id) < len(frame_chunk):
+                if self.local_flow_control_window(stream_id) < len(frame_chunk):  # pragma: no cover
                     self.lock.release()
                     time.sleep(0.1)
                     continue
@@ -183,12 +184,12 @@ class Http2Layer(base.Layer):
         return True
 
     def _handle_data_received(self, eid, event, source_conn):
-        bsl = self.config.options.body_size_limit
+        bsl = human.parse_size(self.config.options.body_size_limit)
         if bsl and self.streams[eid].queued_data_length > bsl:
             self.streams[eid].kill()
             self.connections[source_conn].safe_reset_stream(
                 event.stream_id,
-                h2.errors.REFUSED_STREAM
+                h2.errors.ErrorCodes.REFUSED_STREAM
             )
             self.log("HTTP body too large. Limit is {}.".format(bsl), "info")
         else:
@@ -206,14 +207,15 @@ class Http2Layer(base.Layer):
         return True
 
     def _handle_stream_reset(self, eid, event, is_server, other_conn):
-        self.streams[eid].kill()
-        if eid in self.streams and event.error_code == h2.errors.CANCEL:
-            if is_server:
-                other_stream_id = self.streams[eid].client_stream_id
-            else:
-                other_stream_id = self.streams[eid].server_stream_id
-            if other_stream_id is not None:
-                self.connections[other_conn].safe_reset_stream(other_stream_id, event.error_code)
+        if eid in self.streams:
+            self.streams[eid].kill()
+            if event.error_code == h2.errors.ErrorCodes.CANCEL:
+                if is_server:
+                    other_stream_id = self.streams[eid].client_stream_id
+                else:
+                    other_stream_id = self.streams[eid].server_stream_id
+                if other_stream_id is not None:
+                    self.connections[other_conn].safe_reset_stream(other_stream_id, event.error_code)
         return True
 
     def _handle_remote_settings_changed(self, event, other_conn):
@@ -228,7 +230,7 @@ class Http2Layer(base.Layer):
             event.last_stream_id,
             event.additional_data), "info")
 
-        if event.error_code != h2.errors.NO_ERROR:
+        if event.error_code != h2.errors.ErrorCodes.NO_ERROR:
             # Something terrible has happened - kill everything!
             self.connections[self.client_conn].close_connection(
                 error_code=event.error_code,
@@ -362,7 +364,7 @@ class Http2Layer(base.Layer):
             self._kill_all_streams()
 
 
-def detect_zombie_stream(func):
+def detect_zombie_stream(func):  # pragma: no cover
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         self.raise_zombie()
@@ -454,7 +456,7 @@ class Http2SingleStreamLayer(httpbase._HttpTransmissionLayer, basethread.BaseThr
         else:
             return self.request_data_finished
 
-    def raise_zombie(self, pre_command=None):
+    def raise_zombie(self, pre_command=None):  # pragma: no cover
         connection_closed = self.h2_connection.state_machine.state == h2.connection.ConnectionState.CLOSED
         if self.zombie is not None or connection_closed:
             if pre_command is not None:
@@ -486,14 +488,23 @@ class Http2SingleStreamLayer(httpbase._HttpTransmissionLayer, basethread.BaseThr
 
     @detect_zombie_stream
     def read_request_body(self, request):
-        self.request_data_finished.wait()
-        data = []
-        while self.request_data_queue.qsize() > 0:
-            data.append(self.request_data_queue.get())
-        return data
+        if not request.stream:
+            self.request_data_finished.wait()
+
+        while True:
+            try:
+                yield self.request_data_queue.get(timeout=0.1)
+            except queue.Empty:  # pragma: no cover
+                pass
+            if self.request_data_finished.is_set():
+                self.raise_zombie()
+                while self.request_data_queue.qsize() > 0:
+                    yield self.request_data_queue.get()
+                break
+            self.raise_zombie()
 
     @detect_zombie_stream
-    def send_request(self, message):
+    def send_request_headers(self, request):
         if self.pushed:
             # nothing to do here
             return
@@ -518,10 +529,10 @@ class Http2SingleStreamLayer(httpbase._HttpTransmissionLayer, basethread.BaseThr
         self.server_stream_id = self.connections[self.server_conn].get_next_available_stream_id()
         self.server_to_client_stream_ids[self.server_stream_id] = self.client_stream_id
 
-        headers = message.headers.copy()
-        headers.insert(0, ":path", message.path)
-        headers.insert(0, ":method", message.method)
-        headers.insert(0, ":scheme", message.scheme)
+        headers = request.headers.copy()
+        headers.insert(0, ":path", request.path)
+        headers.insert(0, ":method", request.method)
+        headers.insert(0, ":scheme", request.scheme)
 
         priority_exclusive = None
         priority_depends_on = None
@@ -552,12 +563,23 @@ class Http2SingleStreamLayer(httpbase._HttpTransmissionLayer, basethread.BaseThr
             self.raise_zombie()
             self.connections[self.server_conn].lock.release()
 
+    @detect_zombie_stream
+    def send_request_body(self, request, chunks):
+        if self.pushed:
+            # nothing to do here
+            return
+
         if not self.no_body:
             self.connections[self.server_conn].safe_send_body(
                 self.raise_zombie,
                 self.server_stream_id,
-                [message.content]
+                chunks
             )
+
+    @detect_zombie_stream
+    def send_request(self, message):
+        self.send_request_headers(message)
+        self.send_request_body(message, [message.content])
 
     @detect_zombie_stream
     def read_response_headers(self):
@@ -626,7 +648,7 @@ class Http2SingleStreamLayer(httpbase._HttpTransmissionLayer, basethread.BaseThr
             self.log(repr(e), "info")
         except exceptions.SetServerNotAllowedException as e:  # pragma: no cover
             self.log("Changing the Host server for HTTP/2 connections not allowed: {}".format(e), "info")
-        except exceptions.Kill:
+        except exceptions.Kill:  # pragma: no cover
             self.log("Connection killed", "info")
 
         self.kill()

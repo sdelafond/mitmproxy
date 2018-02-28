@@ -11,7 +11,6 @@ from pathod.protocols.http2 import HTTP2StateProtocol
 
 from mitmproxy.test import tutils
 from . import tservers
-from ..conftest import requires_alpn
 
 
 def test_response():
@@ -216,7 +215,6 @@ class TestDaemonHTTP2(PathocTestDaemon):
     ssl = True
     explain = False
 
-    @requires_alpn
     def test_http2(self):
         c = pathoc.Pathoc(
             ("127.0.0.1", self.d.port),
@@ -231,7 +229,6 @@ class TestDaemonHTTP2(PathocTestDaemon):
         )
         assert c.protocol == http1
 
-    @requires_alpn
     def test_http2_alpn(self):
         c = pathoc.Pathoc(
             ("127.0.0.1", self.d.port),
@@ -241,14 +238,13 @@ class TestDaemonHTTP2(PathocTestDaemon):
             http2_skip_connection_preface=True,
         )
 
-        tmp_convert_to_ssl = c.convert_to_ssl
-        c.convert_to_ssl = Mock()
-        c.convert_to_ssl.side_effect = tmp_convert_to_ssl
+        tmp_convert_to_tls = c.convert_to_tls
+        c.convert_to_tls = Mock()
+        c.convert_to_tls.side_effect = tmp_convert_to_tls
         with c.connect():
-            _, kwargs = c.convert_to_ssl.call_args
+            _, kwargs = c.convert_to_tls.call_args
             assert set(kwargs['alpn_protos']) == set([b'http/1.1', b'h2'])
 
-    @requires_alpn
     def test_request(self):
         c = pathoc.Pathoc(
             ("127.0.0.1", self.d.port),
@@ -259,14 +255,3 @@ class TestDaemonHTTP2(PathocTestDaemon):
         with c.connect():
             resp = c.request("get:/p/200")
         assert resp.status_code == 200
-
-    def test_failing_request(self, disable_alpn):
-        c = pathoc.Pathoc(
-            ("127.0.0.1", self.d.port),
-            fp=None,
-            ssl=True,
-            use_http2=True,
-        )
-        with pytest.raises(NotImplementedError):
-            with c.connect():
-                c.request("get:/p/200")

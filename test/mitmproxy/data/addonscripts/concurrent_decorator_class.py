@@ -5,9 +5,8 @@ from mitmproxy.script import concurrent
 class ConcurrentClass:
 
     @concurrent
-    def request(flow):
+    def request(self, flow):
         time.sleep(0.1)
 
 
-def start():
-    return ConcurrentClass()
+addons = [ConcurrentClass()]

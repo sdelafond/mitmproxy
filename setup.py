@@ -1,7 +1,7 @@
 import os
-import runpy
 from codecs import open
 
+import re
 from setuptools import setup, find_packages
 
 # Based on https://github.com/pypa/sampleproject/blob/master/setup.py
@@ -12,7 +12,8 @@ here = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
-VERSION = runpy.run_path(os.path.join(here, "mitmproxy", "version.py"))["VERSION"]
+with open(os.path.join(here, "mitmproxy", "version.py")) as f:
+    VERSION = re.search(r'VERSION = "(.+?)(?:-0x|")', f.read()).group(1)
 
 setup(
     name="mitmproxy",
@@ -61,60 +62,46 @@ setup(
     # It is not considered best practice to use install_requires to pin dependencies to specific versions.
     install_requires=[
         "blinker>=1.4, <1.5",
-        "click>=6.2, <7",
+        "brotlipy>=0.7.0,<0.8",
         "certifi>=2015.11.20.1",  # no semver here - this should always be on the last release!
-        "construct>=2.8, <2.9",
-        "cryptography>=1.3, <1.9",
-        "cssutils>=1.0.1, <1.1",
-        "h2>=2.5.1, <3",
-        "html2text>=2016.1.8, <=2016.9.19",
-        "hyperframe>=4.0.1, <5",
-        "jsbeautifier>=1.6.3, <1.7",
-        "kaitaistruct>=0.6, <0.7",
+        "click>=6.2, <7",
+        "cryptography>=2.1.4,<2.2",
+        'h11>=0.7.0,<0.8',
+        "h2>=3.0.1,<4",
+        "hyperframe>=5.1.0,<6",
+        "kaitaistruct>=0.7,<0.9",
+        "ldap3>=2.4,<2.5",
         "passlib>=1.6.5, <1.8",
-        "pyasn1>=0.1.9, <0.3",
-        "pyOpenSSL>=16.0, <17.0",
+        "pyasn1>=0.3.1,<0.5",
+        "pyOpenSSL>=17.5,<17.6",
         "pyparsing>=2.1.3, <2.3",
-        "pyperclip>=1.5.22, <1.6",
+        "pyperclip>=1.6.0, <1.7",
         "requests>=2.9.1, <3",
-        "ruamel.yaml>=0.13.2, <0.14",
-        "tornado>=4.3, <4.5",
-        "urwid>=1.3.1, <1.4",
-        "watchdog>=0.8.3, <0.9",
-        "brotlipy>=0.5.1, <0.7",
+        "ruamel.yaml>=0.13.2, <0.16",
         "sortedcontainers>=1.5.4, <1.6",
-        # transitive from cryptography, we just blacklist here.
-        # https://github.com/pypa/setuptools/issues/861
-        "setuptools>=11.3, !=29.0.0",
+        "tornado>=4.3, <4.6",
+        "urwid>=2.0.1,<2.1",
+        "wsproto>=0.11.0,<0.12.0",
     ],
     extras_require={
         ':sys_platform == "win32"': [
-            "pydivert>=2.0.3, <2.1",
-        ],
-        ':sys_platform != "win32"': [
+            "pydivert>=2.0.3,<2.2",
         ],
         'dev': [
+            "flake8>=3.5, <3.6",
             "Flask>=0.10.1, <0.13",
-            "flake8>=3.2.1, <3.4",
-            "mypy>=0.471, <0.480",
-            "rstcheck>=2.2, <4.0",
+            "mypy>=0.560,<0.561",
+            "pytest-cov>=2.5.1,<3",
+            "pytest-faulthandler>=1.3.1,<2",
+            "pytest-timeout>=1.2.1,<2",
+            "pytest-xdist>=1.22,<2",
+            "pytest>=3.3,<4",
             "tox>=2.3, <3",
-            "pytest>=3, <3.1",
-            "pytest-cov>=2.2.1, <3",
-            "pytest-timeout>=1.0.0, <2",
-            "pytest-xdist>=1.14, <2",
-            "pytest-faulthandler>=1.3.0, <2",
-            "sphinx>=1.3.5, <1.6",
-            "sphinx-autobuild>=0.5.2, <0.7",
-            "sphinxcontrib-documentedlist>=0.5.0, <0.6",
-            "sphinx_rtd_theme>=0.1.9, <0.2",
-        ],
-        'contentviews': [
+            "rstcheck>=2.2, <4.0",
         ],
         'examples': [
-            "beautifulsoup4>=4.4.1, <4.6",
-            "pytz>=2015.07.0, <=2016.10",
-            "Pillow>=3.2, <4.1",
+            "beautifulsoup4>=4.4.1, <4.7",
+            "Pillow>=4.3,<5.1",
         ]
     }
 )

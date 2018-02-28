@@ -1,6 +1,5 @@
 import _ from 'lodash'
 import React from 'react'
-import shallowEqual from 'shallowequal'
 
 window._ = _;
 window.React = React;
@@ -88,6 +87,11 @@ export function fetchApi(url, options={}) {
         } else {
             url += "&" + xsrf;
         }
+    } else {
+        url += '.json'
+    }
+    if (url.startsWith("/")) {
+        url = "." + url;
     }
 
     return fetch(url, {
@@ -121,12 +125,8 @@ export function getDiff(obj1, obj2) {
     return result
 }
 
-export const pure = renderFn => class extends React.Component {
+export const pure = renderFn => class extends React.PureComponent {
     static displayName = renderFn.name
-
-    shouldComponentUpdate(nextProps) {
-        return !shallowEqual(this.props, nextProps)
-    }
 
     render() {
         return renderFn(this.props)

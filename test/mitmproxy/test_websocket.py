@@ -1,6 +1,9 @@
+import io
 import pytest
 
+from mitmproxy.io import tnetstring
 from mitmproxy import flowfilter
+from mitmproxy.exceptions import Kill, ControlException
 from mitmproxy.test import tflow
 
 
@@ -14,8 +17,6 @@ class TestWebSocketFlow:
         b = f2.get_state()
         del a["id"]
         del b["id"]
-        del a["handshake_flow"]["id"]
-        del b["handshake_flow"]["id"]
         assert a == b
         assert not f == f2
         assert f is not f2
@@ -42,6 +43,20 @@ class TestWebSocketFlow:
         assert f.error.get_state() == f2.error.get_state()
         assert f.error is not f2.error
 
+    def test_kill(self):
+        f = tflow.twebsocketflow()
+        with pytest.raises(ControlException):
+            f.intercept()
+            f.resume()
+            f.kill()
+
+        f = tflow.twebsocketflow()
+        f.intercept()
+        assert f.killable
+        f.kill()
+        assert not f.killable
+        assert f.reply.value == Kill
+
     def test_match(self):
         f = tflow.twebsocketflow()
         assert not flowfilter.match("~b nonexistent", f)
@@ -60,3 +75,20 @@ class TestWebSocketFlow:
         assert 'WebSocketFlow' in repr(f)
         assert 'binary message: ' in repr(f.messages[0])
         assert 'text message: ' in repr(f.messages[1])
+
+    def test_serialize(self):
+        b = io.BytesIO()
+        d = tflow.twebsocketflow().get_state()
+        tnetstring.dump(d, b)
+        assert b.getvalue()
+
+        b = io.BytesIO()
+        d = tflow.twebsocketflow().handshake_flow.get_state()
+        tnetstring.dump(d, b)
+        assert b.getvalue()
+
+    def test_message_kill(self):
+        f = tflow.twebsocketflow()
+        assert not f.messages[-1].killed
+        f.messages[-1].kill()
+        assert f.messages[-1].killed

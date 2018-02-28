@@ -5,7 +5,6 @@ from mitmproxy import flow
 
 from mitmproxy.net import http
 from mitmproxy import version
-from mitmproxy.net import tcp
 from mitmproxy import connections  # noqa
 
 
@@ -53,12 +52,11 @@ class HTTPRequest(http.Request):
 
     def get_state(self):
         state = super().get_state()
-        state.update(
-            is_replay=self.is_replay
-        )
+        state["is_replay"] = self.is_replay
         return state
 
     def set_state(self, state):
+        state = state.copy()
         self.is_replay = state.pop("is_replay")
         super().set_state(state)
 
@@ -168,11 +166,12 @@ class HTTPFlow(flow.Flow):
         """ What mode was the proxy layer in when receiving this request? """
 
     _stateobject_attributes = flow.Flow._stateobject_attributes.copy()
-    _stateobject_attributes.update(
+    # mypy doesn't support update with kwargs
+    _stateobject_attributes.update(dict(
         request=HTTPRequest,
         response=HTTPResponse,
         mode=str
-    )
+    ))
 
     def __repr__(self):
         s = "<HTTPFlow"
@@ -224,8 +223,7 @@ def make_error_response(
         status_code=status_code,
         reason=reason,
         message=html.escape(message),
-    )
-    body = body.encode("utf8", "replace")
+    ).encode("utf8", "replace")
 
     if not headers:
         headers = http.Headers(
@@ -245,9 +243,8 @@ def make_error_response(
 
 
 def make_connect_request(address):
-    address = tcp.Address.wrap(address)
     return HTTPRequest(
-        "authority", b"CONNECT", None, address.host, address.port, None, b"HTTP/1.1",
+        "authority", b"CONNECT", None, address[0], address[1], None, b"HTTP/1.1",
         http.Headers(), b""
     )
 
