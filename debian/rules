@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
 export PYBUILD_NAME=mitmproxy
-export PYBUILD_TEST_ARGS="-k-TestServerIPv6 -k-TestServerCurrentCipher -k-TestServerCipherList -k-test_format_xml -k-test_view_image"
+export PYBUILD_TEST_ARGS="-k-TestServerIPv6 -k-TestServerCurrentCipher -k-TestServerCipherList -k-test_format_xml -k-test_view_image -k-test_onboarding"
 
 export LC_ALL=C.UTF-8
 
