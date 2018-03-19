@@ -1,3 +1,10 @@
+mitmproxy (2.0.2-4) unstable; urgency=medium
+
+  * Rediff patches, and remove all upper-bounds on versioned conflicts
+    following upstream recommendation in #846850 (Closes: #892500)
+
+ -- Sebastien Delafond <seb@debian.org>  Mon, 19 Mar 2018 11:46:44 +0100
+
 mitmproxy (2.0.2-3) unstable; urgency=medium
 
   * Switch to DEP-14
