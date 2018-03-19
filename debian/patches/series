@@ -1,10 +1,6 @@
-0002-Refer-to-examples-path-in-a-way-that-s-compatible-wi.patch
-0003-remove-chrome-devtools-LICENSE.patch
+0001-Refer-to-examples-path-in-a-way-that-s-compatible-wi.patch
+0002-Prevent-chrome-devtools-LICENSE-from-being-installed.patch
 0003-Do-not-call-full_coverage.patch
-0004-Remove-conflict-on-tornado-4.5.patch
-0005-Remove-conflict-on-kaitaistruct-0.7.patch
-0006-Remove-conflict-on-hyperframe-0.5.patch
-0007-Remove-conflict-on-h2-3.patch
-0008-Remove-conflict-on-cryptography-1.9.patch
-0009-brotli-is-packaged-as-python3-brotli-and-not-python3.patch
-0010-Remove-jsbeautifier.patch
+0004-brotli-is-packaged-as-python3-brotli-and-not-python3.patch
+0005-Remove-jsbeautifier.patch
+0006-Remove-all-upper-bounds-on-versioned-conflicts-follo.patch
