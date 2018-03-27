@@ -113,7 +113,7 @@ class TestResponseUtils:
         assert attrs["domain"] == "example.com"
         assert attrs["expires"] == "Wed Oct  21 16:29:41 2015"
         assert attrs["path"] == "/"
-        assert attrs["httponly"] is None
+        assert attrs["httponly"] == ""
 
     def test_get_cookies_no_value(self):
         resp = tresp()
@@ -150,10 +150,10 @@ class TestResponseUtils:
         n = time.time()
         r.headers["date"] = email.utils.formatdate(n)
         pre = r.headers["date"]
-        r.refresh(n)
+        r.refresh(946681202)
         assert pre == r.headers["date"]
-        r.refresh(n + 60)
 
+        r.refresh(946681262)
         d = email.utils.parsedate_tz(r.headers["date"])
         d = email.utils.mktime_tz(d)
         # Weird that this is not exact...

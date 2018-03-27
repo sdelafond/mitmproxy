@@ -1,3 +1,4 @@
+import typing  # noqa
 # Low-color themes should ONLY use the standard foreground and background
 # colours listed here:
 #
@@ -23,7 +24,7 @@ class Palette:
         # List and Connections
         'method', 'focus',
         'code_200', 'code_300', 'code_400', 'code_500', 'code_other',
-        'error', "warn",
+        'error', "warn", "alert",
         'header', 'highlight', 'intercept', 'replay', 'mark',
 
         # Hex view
@@ -31,8 +32,11 @@ class Palette:
 
         # Grid Editor
         'focusfield', 'focusfield_error', 'field_error', 'editfield',
+
+        # Commander
+        'commander_command', 'commander_invalid', 'commander_hint'
     ]
-    high = None
+    high = None  # type: typing.Mapping[str, typing.Sequence[str]]
 
     def palette(self, transparent):
         l = []
@@ -99,6 +103,7 @@ class LowDark(Palette):
         code_500 = ('light red', 'default'),
         code_other = ('dark red', 'default'),
 
+        alert = ('light magenta', 'default'),
         warn = ('brown', 'default'),
         error = ('light red', 'default'),
 
@@ -116,6 +121,11 @@ class LowDark(Palette):
         focusfield_error = ('dark red', 'light gray'),
         field_error = ('dark red', 'default'),
         editfield = ('white', 'default'),
+
+
+        commander_command = ('white,bold', 'default'),
+        commander_invalid = ('light red', 'default'),
+        commander_hint = ('dark gray', 'default'),
     )
 
 
@@ -167,6 +177,7 @@ class LowLight(Palette):
 
         error = ('light red', 'default'),
         warn = ('brown', 'default'),
+        alert = ('light magenta', 'default'),
 
         header = ('dark blue', 'default'),
         highlight = ('black,bold', 'default'),
@@ -182,6 +193,10 @@ class LowLight(Palette):
         focusfield_error = ('dark red', 'light gray'),
         field_error = ('dark red', 'black'),
         editfield = ('black', 'default'),
+
+        commander_command = ('dark magenta', 'default'),
+        commander_invalid = ('light red', 'default'),
+        commander_hint = ('light gray', 'default'),
     )
 
 
@@ -252,6 +267,7 @@ class SolarizedLight(LowLight):
 
         error = (sol_red, 'default'),
         warn = (sol_orange, 'default'),
+        alert = (sol_magenta, 'default'),
 
         header = (sol_blue, 'default'),
         highlight = (sol_base01, 'default'),
@@ -266,6 +282,10 @@ class SolarizedLight(LowLight):
         focusfield_error = (sol_red, sol_base2),
         field_error = (sol_red, 'default'),
         editfield = (sol_base01, 'default'),
+
+        commander_command = (sol_cyan, 'default'),
+        commander_invalid = (sol_orange, 'default'),
+        commander_hint = (sol_base1, 'default'),
     )
 
 
@@ -302,6 +322,7 @@ class SolarizedDark(LowDark):
 
         error = (sol_red, 'default'),
         warn = (sol_orange, 'default'),
+        alert = (sol_magenta, 'default'),
 
         header = (sol_blue, 'default'),
         highlight = (sol_base01, 'default'),
@@ -316,6 +337,10 @@ class SolarizedDark(LowDark):
         focusfield_error = (sol_red, sol_base02),
         field_error = (sol_red, 'default'),
         editfield = (sol_base1, 'default'),
+
+        commander_command = (sol_blue, 'default'),
+        commander_invalid = (sol_orange, 'default'),
+        commander_hint = (sol_base00, 'default'),
     )
 
 

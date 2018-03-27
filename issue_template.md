@@ -11,10 +11,7 @@
 
 ##### System information
 
+<!-- Paste the output of "mitmproxy --version" here. -->
 
-<!--
-    Cut and paste the output of "mitmproxy --version".
 
-    If you're using an older version if mitmproxy, please specify the version
-    and OS.
--->
+<!-- Please use the mitmproxy forums (https://discourse.mitmproxy.org/) for support/how-to questions. Thanks! :) -->

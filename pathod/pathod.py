@@ -3,19 +3,17 @@ import logging
 import os
 import sys
 import threading
-
-from mitmproxy.net import tcp
+from mitmproxy.net import tcp, tls
 from mitmproxy import certs as mcerts
 from mitmproxy.net import websockets
 from mitmproxy import version
-
 import urllib
 from mitmproxy import exceptions
-
 from pathod import language
 from pathod import utils
 from pathod import log
 from pathod import protocols
+import typing  # noqa
 
 
 DEFAULT_CERT_DOMAIN = b"pathod.net"
@@ -39,8 +37,8 @@ class SSLOptions:
         sans=(),
         not_after_connect=None,
         request_client_cert=False,
-        ssl_version=tcp.SSL_DEFAULT_METHOD,
-        ssl_options=tcp.SSL_DEFAULT_OPTIONS,
+        ssl_version=tls.DEFAULT_METHOD,
+        ssl_options=tls.DEFAULT_OPTIONS,
         ciphers=None,
         certs=None,
         alpn_select=b'h2',
@@ -71,7 +69,7 @@ class SSLOptions:
 
 class PathodHandler(tcp.BaseHandler):
     wbufsize = 0
-    sni = None
+    sni = None  # type: typing.Union[str, None, bool]
 
     def __init__(
         self,
@@ -166,13 +164,13 @@ class PathodHandler(tcp.BaseHandler):
                     headers=headers.fields,
                     http_version=http_version,
                     sni=self.sni,
-                    remote_address=self.address(),
+                    remote_address=self.address,
                     clientcert=clientcert,
                     first_line_format=first_line_format
                 ),
                 cipher=None,
             )
-            if self.ssl_established:
+            if self.tls_established:
                 retlog["cipher"] = self.get_current_cipher()
 
             m = utils.MemBool()
@@ -246,7 +244,7 @@ class PathodHandler(tcp.BaseHandler):
         if self.server.ssl:
             try:
                 cert, key, _ = self.server.ssloptions.get_cert(None)
-                self.convert_to_ssl(
+                self.convert_to_tls(
                     cert,
                     key,
                     handle_sni=self.handle_sni,

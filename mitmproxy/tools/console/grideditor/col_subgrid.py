@@ -26,16 +26,9 @@ class Column(base.Column):
                 expire=1000
             )
             return
-        elif key in ["enter"]:
-            editor.master.view_grideditor(
-                self.subeditor(
-                    editor.master,
-                    editor.walker.get_current_value(),
-                    editor.set_subeditor_value,
-                    editor.walker.focus,
-                    editor.walker.focus_col
-                )
-            )
+        elif key == "m_select":
+            self.subeditor.grideditor = editor
+            editor.master.switch_view("edit_focus_setcookie_attrs")
         else:
             return key
 

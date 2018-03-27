@@ -1,12 +1,11 @@
 import time
+import typing  # noqa
 import uuid
 
-from mitmproxy import controller  # noqa
-from mitmproxy import stateobject
 from mitmproxy import connections
+from mitmproxy import controller, exceptions  # noqa
+from mitmproxy import stateobject
 from mitmproxy import version
-
-import typing  # noqa
 
 
 class Error(stateobject.StateObject):
@@ -78,7 +77,7 @@ class Flow(stateobject.StateObject):
         self._backup = None  # type: typing.Optional[Flow]
         self.reply = None  # type: typing.Optional[controller.Reply]
         self.marked = False  # type: bool
-        self.metadata = dict()  # type: typing.Dict[str, str]
+        self.metadata = dict()  # type: typing.Dict[str, typing.Any]
 
     _stateobject_attributes = dict(
         id=str,
@@ -88,17 +87,18 @@ class Flow(stateobject.StateObject):
         type=str,
         intercepted=bool,
         marked=bool,
-        metadata=dict,
+        metadata=typing.Dict[str, typing.Any],
     )
 
     def get_state(self):
         d = super().get_state()
-        d.update(version=version.IVERSION)
+        d.update(version=version.FLOW_FORMAT_VERSION)
         if self._backup and self._backup != d:
             d.update(backup=self._backup)
         return d
 
     def set_state(self, state):
+        state = state.copy()
         state.pop("version")
         if "backup" in state:
             self._backup = state.pop("backup")
@@ -112,8 +112,9 @@ class Flow(stateobject.StateObject):
 
     def copy(self):
         f = super().copy()
-        f.id = str(uuid.uuid4())
         f.live = False
+        if self.reply is not None:
+            f.reply = controller.DummyReply()
         return f
 
     def modified(self):
@@ -143,7 +144,11 @@ class Flow(stateobject.StateObject):
 
     @property
     def killable(self):
-        return self.reply and self.reply.state in {"handled", "taken"}
+        return (
+            self.reply and
+            self.reply.state in {"start", "taken"} and
+            self.reply.value != exceptions.Kill
+        )
 
     def kill(self):
         """
@@ -151,12 +156,7 @@ class Flow(stateobject.StateObject):
         """
         self.error = Error("Connection killed")
         self.intercepted = False
-        # reply.state should only be "handled" or "taken" here.
-        # if none of this is the case, .take() will raise an exception.
-        if self.reply.state != "taken":
-            self.reply.take()
         self.reply.kill(force=True)
-        self.reply.commit()
         self.live = False
 
     def intercept(self):
@@ -176,5 +176,7 @@ class Flow(stateobject.StateObject):
         if not self.intercepted:
             return
         self.intercepted = False
-        self.reply.ack()
-        self.reply.commit()
+        # If a flow is intercepted and then duplicated, the duplicated one is not taken.
+        if self.reply.state == "taken":
+            self.reply.ack()
+            self.reply.commit()

@@ -11,8 +11,6 @@ from ...mitmproxy.net import tservers as net_tservers
 
 from pathod.protocols.http2 import HTTP2StateProtocol, TCPHandler
 
-from ...conftest import requires_alpn
-
 
 class TestTCPHandlerWrapper:
     def test_wrapped(self):
@@ -68,7 +66,6 @@ class TestProtocol:
         assert mock_server_method.called
 
 
-@requires_alpn
 class TestCheckALPNMatch(net_tservers.ServerTestBase):
     handler = EchoHandler
     ssl = dict(
@@ -78,12 +75,11 @@ class TestCheckALPNMatch(net_tservers.ServerTestBase):
     def test_check_alpn(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl(alpn_protos=[b'h2'])
+            c.convert_to_tls(alpn_protos=[b'h2'])
             protocol = HTTP2StateProtocol(c)
             assert protocol.check_alpn()
 
 
-@requires_alpn
 class TestCheckALPNMismatch(net_tservers.ServerTestBase):
     handler = EchoHandler
     ssl = dict(
@@ -93,7 +89,7 @@ class TestCheckALPNMismatch(net_tservers.ServerTestBase):
     def test_check_alpn(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl(alpn_protos=[b'h2'])
+            c.convert_to_tls(alpn_protos=[b'h2'])
             protocol = HTTP2StateProtocol(c)
             with pytest.raises(NotImplementedError):
                 protocol.check_alpn()
@@ -202,7 +198,7 @@ class TestApplySettings(net_tservers.ServerTestBase):
         def handle(self):
             # check settings acknowledgement
             assert self.rfile.read(9) == codecs.decode('000000040100000000', 'hex_codec')
-            self.wfile.write("OK")
+            self.wfile.write(b"OK")
             self.wfile.flush()
             self.rfile.safe_read(9)  # just to keep the connection alive a bit longer
 
@@ -211,7 +207,7 @@ class TestApplySettings(net_tservers.ServerTestBase):
     def test_apply_settings(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl()
+            c.convert_to_tls()
             protocol = HTTP2StateProtocol(c)
 
             protocol._apply_settings({
@@ -306,7 +302,7 @@ class TestReadRequest(net_tservers.ServerTestBase):
     def test_read_request(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl()
+            c.convert_to_tls()
             protocol = HTTP2StateProtocol(c, is_server=True)
             protocol.connection_preface_performed = True
 
@@ -332,7 +328,7 @@ class TestReadRequestRelative(net_tservers.ServerTestBase):
     def test_asterisk_form(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl()
+            c.convert_to_tls()
             protocol = HTTP2StateProtocol(c, is_server=True)
             protocol.connection_preface_performed = True
 
@@ -355,7 +351,7 @@ class TestReadRequestAbsolute(net_tservers.ServerTestBase):
     def test_absolute_form(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl()
+            c.convert_to_tls()
             protocol = HTTP2StateProtocol(c, is_server=True)
             protocol.connection_preface_performed = True
 
@@ -382,7 +378,7 @@ class TestReadResponse(net_tservers.ServerTestBase):
     def test_read_response(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl()
+            c.convert_to_tls()
             protocol = HTTP2StateProtocol(c)
             protocol.connection_preface_performed = True
 
@@ -408,7 +404,7 @@ class TestReadEmptyResponse(net_tservers.ServerTestBase):
     def test_read_empty_response(self):
         c = tcp.TCPClient(("127.0.0.1", self.port))
         with c.connect():
-            c.convert_to_ssl()
+            c.convert_to_tls()
             protocol = HTTP2StateProtocol(c)
             protocol.connection_preface_performed = True
 

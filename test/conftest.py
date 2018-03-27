@@ -1,16 +1,9 @@
 import os
-import pytest
-import OpenSSL
-import functools
-from contextlib import contextmanager
+import socket
 
-import mitmproxy.net.tcp
+import pytest
 
 pytest_plugins = ('test.full_coverage_plugin',)
-
-requires_alpn = pytest.mark.skipif(
-    not mitmproxy.net.tcp.HAS_ALPN,
-    reason='requires OpenSSL with ALPN support')
 
 skip_windows = pytest.mark.skipif(
     os.name == "nt",
@@ -27,26 +20,16 @@ skip_appveyor = pytest.mark.skipif(
     reason='Skipping due to Appveyor'
 )
 
+try:
+    s = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    s.bind(("::1", 0))
+    s.close()
+except OSError:
+    no_ipv6 = True
+else:
+    no_ipv6 = False
 
-@pytest.fixture()
-def disable_alpn(monkeypatch):
-    monkeypatch.setattr(mitmproxy.net.tcp, 'HAS_ALPN', False)
-    monkeypatch.setattr(OpenSSL.SSL._lib, 'Cryptography_HAS_ALPN', False)
-
-
-################################################################################
-# TODO: remove this wrapper when pytest 3.1.0 is released
-original_pytest_raises = pytest.raises
-
-
-@contextmanager
-@functools.wraps(original_pytest_raises)
-def raises(exc, *args, **kwargs):
-    with original_pytest_raises(exc, *args, **kwargs) as exc_info:
-        yield
-    if 'match' in kwargs:
-        assert exc_info.match(kwargs['match'])
-
-
-pytest.raises = raises
-################################################################################
+skip_no_ipv6 = pytest.mark.skipif(
+    no_ipv6,
+    reason='Host has no IPv6 support'
+)

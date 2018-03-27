@@ -7,6 +7,10 @@ from mitmproxy.net.http import cookies
 
 cookie_pairs = [
     [
+        "=uno",
+        [["", "uno"]]
+    ],
+    [
         "",
         []
     ],
@@ -16,7 +20,7 @@ cookie_pairs = [
     ],
     [
         "one",
-        [["one", None]]
+        [["one", ""]]
     ],
     [
         "one=uno; two=due",
@@ -36,7 +40,7 @@ cookie_pairs = [
     ],
     [
         "one=uno; two; three=tre",
-        [["one", "uno"], ["two", None], ["three", "tre"]]
+        [["one", "uno"], ["two", ""], ["three", "tre"]]
     ],
     [
         "_lvs2=zHai1+Hq+Tc2vmc2r4GAbdOI5Jopg3EwsdUT9g=; "
@@ -79,8 +83,12 @@ def test_read_quoted_string():
 def test_read_cookie_pairs():
     vals = [
         [
+            "=uno",
+            [["", "uno"]]
+        ],
+        [
             "one",
-            [["one", None]]
+            [["one", ""]]
         ],
         [
             "one=two",
@@ -100,7 +108,7 @@ def test_read_cookie_pairs():
         ],
         [
             'one="two"; three=four; five',
-            [["one", "two"], ["three", "four"], ["five", None]]
+            [["one", "two"], ["three", "four"], ["five", ""]]
         ],
         [
             'one="\\"two"; three=four',
@@ -135,6 +143,12 @@ def test_cookie_roundtrips():
 def test_parse_set_cookie_pairs():
     pairs = [
         [
+            "=uno",
+            [[
+                ["", "uno"]
+            ]]
+        ],
+        [
             "one=uno",
             [[
                 ["one", "uno"]
@@ -150,7 +164,7 @@ def test_parse_set_cookie_pairs():
             "one=uno; foo",
             [[
                 ["one", "uno"],
-                ["foo", None]
+                ["foo", ""]
             ]]
         ],
         [
@@ -198,6 +212,12 @@ def test_parse_set_cookie_header():
         ],
         [
             ";", []
+        ],
+        [
+            "=uno",
+            [
+                ("", "uno", ())
+            ]
         ],
         [
             "one=uno",
@@ -269,6 +289,9 @@ def test_refresh_cookie():
     c = "MOO=BAR; Expires=Tue, 08-Mar-2011 00:20:38 GMT; Path=foo.com; Secure"
     assert "00:21:38" in cookies.refresh_set_cookie_header(c, 60)
 
+    c = "rfoo=bar; Domain=reddit.com; expires=Thu, 31 Dec 2037; Path=/"
+    assert "expires" not in cookies.refresh_set_cookie_header(c, 60)
+
     c = "foo,bar"
     with pytest.raises(ValueError):
         cookies.refresh_set_cookie_header(c, 60)
@@ -282,6 +305,10 @@ def test_refresh_cookie():
     assert cookies.refresh_set_cookie_header(c, 0)
     c = "foo/bar=bla"
     assert cookies.refresh_set_cookie_header(c, 0)
+
+    # https://github.com/mitmproxy/mitmproxy/issues/2250
+    c = ""
+    assert cookies.refresh_set_cookie_header(c, 60) == ""
 
 
 @mock.patch('time.time')

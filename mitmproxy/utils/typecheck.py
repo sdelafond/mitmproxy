@@ -1,81 +1,95 @@
 import typing
 
+Type = typing.Union[
+    typing.Any  # anything more elaborate really fails with mypy at the moment.
+]
 
-def check_type(attr_name: str, value: typing.Any, typeinfo: type) -> None:
+
+def sequence_type(typeinfo: typing.Type[typing.List]) -> Type:
+    """Return the type of a sequence, e.g. typing.List"""
+    try:
+        return typeinfo.__args__[0]  # type: ignore
+    except AttributeError:  # Python 3.5.0
+        return typeinfo.__parameters__[0]  # type: ignore
+
+
+def tuple_types(typeinfo: typing.Type[typing.Tuple]) -> typing.Sequence[Type]:
+    """Return the types of a typing.Tuple"""
+    try:
+        return typeinfo.__args__  # type: ignore
+    except AttributeError:  # Python 3.5.x
+        return typeinfo.__tuple_params__  # type: ignore
+
+
+def union_types(typeinfo: typing.Type[typing.Tuple]) -> typing.Sequence[Type]:
+    """return the types of a typing.Union"""
+    try:
+        return typeinfo.__args__  # type: ignore
+    except AttributeError:  # Python 3.5.x
+        return typeinfo.__union_params__  # type: ignore
+
+
+def mapping_types(typeinfo: typing.Type[typing.Mapping]) -> typing.Tuple[Type, Type]:
+    """return the types of a mapping, e.g. typing.Dict"""
+    return typeinfo.__args__  # type: ignore
+
+
+def check_option_type(name: str, value: typing.Any, typeinfo: Type) -> None:
     """
-    This function checks if the provided value is an instance of typeinfo
-    and raises a TypeError otherwise.
-
-    The following types from the typing package have specialized support:
-
-    - Union
-    - Tuple
-    - IO
+    Check if the provided value is an instance of typeinfo and raises a
+    TypeError otherwise. This function supports only those types required for
+    options.
     """
-    # If we realize that we need to extend this list substantially, it may make sense
-    # to use typeguard for this, but right now it's not worth the hassle for 16 lines of code.
-
     e = TypeError("Expected {} for {}, but got {}.".format(
         typeinfo,
-        attr_name,
+        name,
         type(value)
     ))
 
     typename = str(typeinfo)
 
     if typename.startswith("typing.Union"):
-        try:
-            types = typeinfo.__args__
-        except AttributeError:
-            # Python 3.5.x
-            types = typeinfo.__union_params__
-
-        for T in types:
+        for T in union_types(typeinfo):
             try:
-                check_type(attr_name, value, T)
+                check_option_type(name, value, T)
             except TypeError:
                 pass
             else:
                 return
         raise e
     elif typename.startswith("typing.Tuple"):
-        try:
-            types = typeinfo.__args__
-        except AttributeError:
-            # Python 3.5.x
-            types = typeinfo.__tuple_params__
-
+        types = tuple_types(typeinfo)
         if not isinstance(value, (tuple, list)):
             raise e
         if len(types) != len(value):
             raise e
         for i, (x, T) in enumerate(zip(value, types)):
-            check_type("{}[{}]".format(attr_name, i), x, T)
+            check_option_type("{}[{}]".format(name, i), x, T)
         return
     elif typename.startswith("typing.Sequence"):
-        try:
-            T = typeinfo.__args__[0]
-        except AttributeError:
-            # Python 3.5.0
-            T = typeinfo.__parameters__[0]
-
+        T = sequence_type(typeinfo)
         if not isinstance(value, (tuple, list)):
             raise e
         for v in value:
-            check_type(attr_name, v, T)
+            check_option_type(name, v, T)
     elif typename.startswith("typing.IO"):
         if hasattr(value, "read"):
             return
         else:
             raise e
+    elif typename.startswith("typing.Any"):
+        return
     elif not isinstance(value, typeinfo):
         raise e
 
 
-def get_arg_type_from_constructor_annotation(cls: type, attr: str) -> typing.Optional[type]:
-    """
-    Returns the first type annotation for attr in the class hierarchy.
-    """
-    for c in cls.mro():
-        if attr in getattr(c.__init__, "__annotations__", ()):
-            return c.__init__.__annotations__[attr]
+def typespec_to_str(typespec: typing.Any) -> str:
+    if typespec in (str, int, bool):
+        t = typespec.__name__
+    elif typespec == typing.Optional[str]:
+        t = 'optional str'
+    elif typespec == typing.Sequence[str]:
+        t = 'sequence of str'
+    else:
+        raise NotImplementedError
+    return t

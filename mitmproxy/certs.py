@@ -4,13 +4,14 @@ import time
 import datetime
 import ipaddress
 import sys
+import typing
 
 from pyasn1.type import univ, constraint, char, namedtype, tag
 from pyasn1.codec.der.decoder import decode
 from pyasn1.error import PyAsn1Error
 import OpenSSL
 
-from mitmproxy.types import serializable
+from mitmproxy.coretypes import serializable
 
 # Default expiry must not be too long: https://github.com/mitmproxy/mitmproxy/issues/815
 DEFAULT_EXP = 94608000  # = 24 * 60 * 60 * 365 * 3
@@ -93,9 +94,9 @@ def dummy_cert(privkey, cacert, commonname, sans):
         try:
             ipaddress.ip_address(i.decode("ascii"))
         except ValueError:
-            ss.append(b"DNS: %s" % i)
+            ss.append(b"DNS:%s" % i)
         else:
-            ss.append(b"IP: %s" % i)
+            ss.append(b"IP:%s" % i)
     ss = b", ".join(ss)
 
     cert = OpenSSL.crypto.X509()
@@ -111,47 +112,7 @@ def dummy_cert(privkey, cacert, commonname, sans):
             [OpenSSL.crypto.X509Extension(b"subjectAltName", False, ss)])
     cert.set_pubkey(cacert.get_pubkey())
     cert.sign(privkey, "sha256")
-    return SSLCert(cert)
-
-
-# DNTree did not pass TestCertStore.test_sans_change and is temporarily replaced by a simple dict.
-#
-# class _Node(UserDict.UserDict):
-#     def __init__(self):
-#         UserDict.UserDict.__init__(self)
-#         self.value = None
-#
-#
-# class DNTree:
-#     """
-#         Domain store that knows about wildcards. DNS wildcards are very
-#         restricted - the only valid variety is an asterisk on the left-most
-#         domain component, i.e.:
-#
-#             *.foo.com
-#     """
-#     def __init__(self):
-#         self.d = _Node()
-#
-#     def add(self, dn, cert):
-#         parts = dn.split(".")
-#         parts.reverse()
-#         current = self.d
-#         for i in parts:
-#             current = current.setdefault(i, _Node())
-#         current.value = cert
-#
-#     def get(self, dn):
-#         parts = dn.split(".")
-#         current = self.d
-#         for i in reversed(parts):
-#             if i in current:
-#                 current = current[i]
-#             elif "*" in current:
-#                 return current["*"].value
-#             else:
-#                 return None
-#         return current.value
+    return Cert(cert)
 
 
 class CertStoreEntry:
@@ -160,6 +121,11 @@ class CertStoreEntry:
         self.cert = cert
         self.privatekey = privatekey
         self.chain_file = chain_file
+
+
+TCustomCertId = bytes  # manually provided certs (e.g. mitmproxy's --certs)
+TGeneratedCertId = typing.Tuple[typing.Optional[bytes], typing.Tuple[bytes, ...]]  # (common_name, sans)
+TCertId = typing.Union[TCustomCertId, TGeneratedCertId]
 
 
 class CertStore:
@@ -179,7 +145,7 @@ class CertStore:
         self.default_ca = default_ca
         self.default_chain_file = default_chain_file
         self.dhparams = dhparams
-        self.certs = dict()
+        self.certs = {}  # type: typing.Dict[TCertId, CertStoreEntry]
         self.expire_queue = []
 
     def expire(self, entry):
@@ -266,6 +232,12 @@ class CertStore:
         with open(os.path.join(path, basename + "-ca-cert.p12"), "wb") as f:
             p12 = OpenSSL.crypto.PKCS12()
             p12.set_certificate(ca)
+            f.write(p12.export())
+
+        # Dump the certificate and key in a PKCS12 format for Windows devices
+        with open(os.path.join(path, basename + "-ca.p12"), "wb") as f:
+            p12 = OpenSSL.crypto.PKCS12()
+            p12.set_certificate(ca)
             p12.set_privatekey(key)
             f.write(p12.export())
 
@@ -274,10 +246,10 @@ class CertStore:
 
         return key, ca
 
-    def add_cert_file(self, spec, path):
+    def add_cert_file(self, spec: str, path: str) -> None:
         with open(path, "rb") as f:
             raw = f.read()
-        cert = SSLCert(
+        cert = Cert(
             OpenSSL.crypto.load_certificate(
                 OpenSSL.crypto.FILETYPE_PEM,
                 raw))
@@ -289,10 +261,10 @@ class CertStore:
             privatekey = self.default_privatekey
         self.add_cert(
             CertStoreEntry(cert, privatekey, path),
-            spec
+            spec.encode("idna")
         )
 
-    def add_cert(self, entry, *names):
+    def add_cert(self, entry: CertStoreEntry, *names: bytes):
         """
             Adds a cert to the certstore. We register the CN in the cert plus
             any SANs, and also the list of names provided as an argument.
@@ -305,21 +277,18 @@ class CertStore:
             self.certs[i] = entry
 
     @staticmethod
-    def asterisk_forms(dn):
-        if dn is None:
-            return []
+    def asterisk_forms(dn: bytes) -> typing.List[bytes]:
+        """
+        Return all asterisk forms for a domain. For example, for www.example.com this will return
+        [b"www.example.com", b"*.example.com", b"*.com"]. The single wildcard "*" is omitted.
+        """
         parts = dn.split(b".")
-        parts.reverse()
-        curr_dn = b""
-        dn_forms = [b"*"]
-        for part in parts[:-1]:
-            curr_dn = b"." + part + curr_dn  # .example.com
-            dn_forms.append(b"*" + curr_dn)   # *.example.com
-        if parts[-1] != b"*":
-            dn_forms.append(parts[-1] + curr_dn)
-        return dn_forms
+        ret = [dn]
+        for i in range(1, len(parts)):
+            ret.append(b"*." + b".".join(parts[i:]))
+        return ret
 
-    def get_cert(self, commonname, sans):
+    def get_cert(self, commonname: typing.Optional[bytes], sans: typing.List[bytes]):
         """
             Returns an (cert, privkey, cert_chain) tuple.
 
@@ -329,9 +298,12 @@ class CertStore:
             sans: A list of Subject Alternate Names.
         """
 
-        potential_keys = self.asterisk_forms(commonname)
+        potential_keys = []  # type: typing.List[TCertId]
+        if commonname:
+            potential_keys.extend(self.asterisk_forms(commonname))
         for s in sans:
             potential_keys.extend(self.asterisk_forms(s))
+        potential_keys.append(b"*")
         potential_keys.append((commonname, tuple(sans)))
 
         name = next(
@@ -356,14 +328,14 @@ class CertStore:
 
 
 class _GeneralName(univ.Choice):
-    # We are only interested in dNSNames. We use a default handler to ignore
-    # other types.
-    # TODO: We should also handle iPAddresses.
+    # We only care about dNSName and iPAddress
     componentType = namedtype.NamedTypes(
         namedtype.NamedType('dNSName', char.IA5String().subtype(
             implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 2)
-        )
-        ),
+        )),
+        namedtype.NamedType('iPAddress', univ.OctetString().subtype(
+            implicitTag=tag.Tag(tag.tagClassContext, tag.tagFormatSimple, 7)
+        )),
     )
 
 
@@ -373,7 +345,7 @@ class _GeneralNames(univ.SequenceOf):
         constraint.ValueSizeConstraint(1, 1024)
 
 
-class SSLCert(serializable.Serializable):
+class Cert(serializable.Serializable):
 
     def __init__(self, cert):
         """
@@ -383,9 +355,6 @@ class SSLCert(serializable.Serializable):
 
     def __eq__(self, other):
         return self.digest("sha256") == other.digest("sha256")
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     def get_state(self):
         return self.to_pem()
@@ -467,7 +436,7 @@ class SSLCert(serializable.Serializable):
         Returns:
             All DNS altnames.
         """
-        # tcp.TCPClient.convert_to_ssl assumes that this property only contains DNS altnames for hostname verification.
+        # tcp.TCPClient.convert_to_tls assumes that this property only contains DNS altnames for hostname verification.
         altnames = []
         for i in range(self.x509.get_extension_count()):
             ext = self.x509.get_extension(i)
@@ -477,5 +446,8 @@ class SSLCert(serializable.Serializable):
                 except PyAsn1Error:
                     continue
                 for i in dec[0]:
-                    altnames.append(i[0].asOctets())
+                    if i[0].hasValue():
+                        e = i[0].asOctets()
+                        altnames.append(e)
+
         return altnames

@@ -22,7 +22,7 @@
 
         ~b rex      Expression in the body of either request or response
         ~bq rex     Expression in the body of request
-        ~bq rex     Expression in the body of response
+        ~bs rex     Expression in the body of response
         ~t rex      Shortcut for content-type header.
 
         ~d rex      Request domain
@@ -44,7 +44,7 @@ from mitmproxy import flow
 from mitmproxy.utils import strutils
 
 import pyparsing as pp
-from typing import Callable
+from typing import Callable, Sequence, Type  # noqa
 
 
 def only(*types):
@@ -69,6 +69,8 @@ class _Token:
 
 
 class _Action(_Token):
+    code = None  # type: str
+    help = None  # type: str
 
     @classmethod
     def make(klass, s, loc, toks):
@@ -162,15 +164,14 @@ def _check_content_type(rex, message):
 class FAsset(_Action):
     code = "a"
     help = "Match asset in response: CSS, Javascript, Flash, images."
-    ASSET_TYPES = [
+    ASSET_TYPES = [re.compile(x) for x in [
         b"text/javascript",
         b"application/x-javascript",
         b"application/javascript",
         b"text/css",
         b"image/.*",
         b"application/x-shockwave-flash"
-    ]
-    ASSET_TYPES = [re.compile(x) for x in ASSET_TYPES]
+    ]]
 
     @only(http.HTTPFlow)
     def __call__(self, f):
@@ -319,10 +320,16 @@ class FDomain(_Rex):
     code = "d"
     help = "Domain"
     flags = re.IGNORECASE
+    is_binary = False
 
-    @only(http.HTTPFlow)
+    @only(http.HTTPFlow, websocket.WebSocketFlow)
     def __call__(self, f):
-        return bool(self.re.search(f.request.data.host))
+        if isinstance(f, websocket.WebSocketFlow):
+            f = f.handshake_flow
+        return bool(
+            self.re.search(f.request.host) or
+            self.re.search(f.request.pretty_host)
+        )
 
 
 class FUrl(_Rex):
@@ -337,9 +344,13 @@ class FUrl(_Rex):
             toks = toks[1:]
         return klass(*toks)
 
-    @only(http.HTTPFlow)
+    @only(http.HTTPFlow, websocket.WebSocketFlow)
     def __call__(self, f):
-        return self.re.search(f.request.url)
+        if isinstance(f, websocket.WebSocketFlow):
+            f = f.handshake_flow
+        if not f or not f.request:
+            return False
+        return self.re.search(f.request.pretty_url)
 
 
 class FSrc(_Rex):
@@ -348,7 +359,10 @@ class FSrc(_Rex):
     is_binary = False
 
     def __call__(self, f):
-        return f.client_conn.address and self.re.search(repr(f.client_conn.address))
+        if not f.client_conn or not f.client_conn.address:
+            return False
+        r = "{}:{}".format(f.client_conn.address[0], f.client_conn.address[1])
+        return f.client_conn.address and self.re.search(r)
 
 
 class FDst(_Rex):
@@ -357,7 +371,10 @@ class FDst(_Rex):
     is_binary = False
 
     def __call__(self, f):
-        return f.server_conn.address and self.re.search(repr(f.server_conn.address))
+        if not f.server_conn or not f.server_conn.address:
+            return False
+        r = "{}:{}".format(f.server_conn.address[0], f.server_conn.address[1])
+        return f.server_conn.address and self.re.search(r)
 
 
 class _Int(_Action):
@@ -425,7 +442,8 @@ filter_unary = [
     FReq,
     FResp,
     FTCP,
-]
+    FWebSocket,
+]  # type: Sequence[Type[_Action]]
 filter_rex = [
     FBod,
     FBodRequest,
@@ -441,7 +459,7 @@ filter_rex = [
     FMethod,
     FSrc,
     FUrl,
-]
+]  # type: Sequence[Type[_Rex]]
 filter_int = [
     FCode
 ]
@@ -527,17 +545,17 @@ def match(flt, flow):
 
 
 help = []
-for i in filter_unary:
+for a in filter_unary:
     help.append(
-        ("~%s" % i.code, i.help)
+        ("~%s" % a.code, a.help)
     )
-for i in filter_rex:
+for b in filter_rex:
     help.append(
-        ("~%s regex" % i.code, i.help)
+        ("~%s regex" % b.code, b.help)
     )
-for i in filter_int:
+for c in filter_int:
     help.append(
-        ("~%s int" % i.code, i.help)
+        ("~%s int" % c.code, c.help)
     )
 help.sort()
 help.extend(

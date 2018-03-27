@@ -1,4 +1,5 @@
-import React, { Component, PropTypes } from 'react'
+import React, { Component } from 'react'
+import PropTypes from 'prop-types'
 import { connect } from 'react-redux'
 
 import { onKeyDown } from '../ducks/ui/keyboard'
@@ -6,6 +7,7 @@ import MainView from './MainView'
 import Header from './Header'
 import EventLog from './EventLog'
 import Footer from './Footer'
+import Modal from './Modal/Modal'
 
 class ProxyAppMain extends Component {
 
@@ -18,7 +20,7 @@ class ProxyAppMain extends Component {
     }
 
     render() {
-        const { showEventLog, location, filter, highlight } = this.props
+        const { showEventLog } = this.props
         return (
             <div id="container" tabIndex="0">
                 <Header/>
@@ -27,6 +29,7 @@ class ProxyAppMain extends Component {
                     <EventLog key="eventlog"/>
                 )}
                 <Footer />
+                <Modal/>
             </div>
         )
     }

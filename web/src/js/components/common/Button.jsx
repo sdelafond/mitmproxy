@@ -1,4 +1,5 @@
-import React, { PropTypes } from "react"
+import React from "react"
+import PropTypes from 'prop-types'
 import classnames from "classnames"
 
 Button.propTypes = {
@@ -11,7 +12,7 @@ Button.propTypes = {
 export default function Button({ onClick, children, icon, disabled, className, title }) {
     return (
         <div className={classnames(className, 'btn btn-default')}
-             onClick={!disabled && onClick}
+             onClick={disabled ? undefined : onClick}
              disabled={disabled}
              title={title}>
             {icon && (<i className={"fa fa-fw " + icon}/> )}

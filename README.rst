@@ -62,7 +62,7 @@ Development Setup
 
 To get started hacking on mitmproxy, please follow the `advanced installation`_ steps to install mitmproxy from source, but stop right before running ``pip3 install mitmproxy``. Instead, do the following:
 
-.. code-block:: text
+.. code-block:: bash
 
     git clone https://github.com/mitmproxy/mitmproxy.git
     cd mitmproxy
@@ -80,7 +80,7 @@ The main executables for the project - ``mitmdump``, ``mitmproxy``,
 virtualenv. After activating the virtualenv, they will be on your $PATH, and
 you can run them like any other command:
 
-.. code-block:: text
+.. code-block:: bash
 
     . venv/bin/activate  # "venv\Scripts\activate" on Windows
     mitmdump --version
@@ -91,13 +91,13 @@ Testing
 If you've followed the procedure above, you already have all the development
 requirements installed, and you can run the full test suite (including tests for code style and documentation) with tox_:
 
-.. code-block:: text
+.. code-block:: bash
 
     tox
 
 For speedier testing, we recommend you run `pytest`_ directly on individual test files or folders:
 
-.. code-block:: text
+.. code-block:: bash
 
     cd test/mitmproxy/addons
     pytest --cov mitmproxy.addons.anticache --looponfail test_anticache.py
@@ -110,19 +110,18 @@ suite. The project tries to maintain 100% test coverage and enforces this strict
 Documentation
 -------------
 
-The mitmproxy documentation is build using Sphinx_, which is installed
-automatically if you set up a development environment as described above. After
-installation, you can render the documentation like this:
+The following tools are required to build the mitmproxy docs:
 
-.. code-block:: text
+- Hugo_
+- modd_
+- yarn_
+
+.. code-block:: bash
 
     cd docs
-    make clean
-    make html
-    make livehtml
+    yarn
+    modd
 
-The last command invokes `sphinx-autobuild`_, which watches the Sphinx directory and rebuilds
-the documentation when a change is detected.
 
 Code Style
 ----------
@@ -136,7 +135,7 @@ This is automatically enforced on every PR. If we detect a linting error, the
 PR checks will fail and block merging. You can run our lint checks yourself
 with the following command:
 
-.. code-block:: text
+.. code-block:: bash
 
     tox -e lint
 
@@ -181,9 +180,10 @@ with the following command:
 .. _virtualenv: https://virtualenv.pypa.io/
 .. _`pytest`: http://pytest.org/
 .. _tox: https://tox.readthedocs.io/
-.. _Sphinx: http://sphinx-doc.org/
-.. _sphinx-autobuild: https://pypi.python.org/pypi/sphinx-autobuild
+.. _Hugo: https://gohugo.io/
+.. _modd: https://github.com/cortesi/modd
+.. _yarn: https://yarnpkg.com/en/
 .. _PEP8: https://www.python.org/dev/peps/pep-0008
 .. _`Google Style Guide`: https://google.github.io/styleguide/pyguide.html
 .. _forums: https://discourse.mitmproxy.org/
-.. _`good first contributions`: https://github.com/mitmproxy/mitmproxy/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-contribution
+.. _`good first contributions`: https://github.com/mitmproxy/mitmproxy/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22

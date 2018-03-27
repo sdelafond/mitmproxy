@@ -194,6 +194,17 @@ def test_expected_http_body_size():
         treq(headers=Headers(content_length="42"))
     ) == 42
 
+    # more than 1 content-length headers with same value
+    assert expected_http_body_size(
+        treq(headers=Headers([(b'content-length', b'42'), (b'content-length', b'42')]))
+    ) == 42
+
+    # more than 1 content-length headers with conflicting value
+    with pytest.raises(exceptions.HttpSyntaxException):
+        expected_http_body_size(
+            treq(headers=Headers([(b'content-length', b'42'), (b'content-length', b'45')]))
+        )
+
     # no length
     assert expected_http_body_size(
         treq(headers=Headers())
@@ -243,6 +254,7 @@ def test_read_request_line():
 
 def test_parse_authority_form():
     assert _parse_authority_form(b"foo:42") == (b"foo", 42)
+    assert _parse_authority_form(b"[2001:db8:42::]:443") == (b"2001:db8:42::", 443)
     with pytest.raises(exceptions.HttpSyntaxException):
         _parse_authority_form(b"foo")
     with pytest.raises(exceptions.HttpSyntaxException):

@@ -8,7 +8,6 @@ from mitmproxy import exceptions
 from mitmproxy.test import tutils
 
 from . import tservers
-from ..conftest import requires_alpn
 
 
 class TestPathod:
@@ -58,7 +57,7 @@ class TestNotAfterConnect(tservers.DaemonTests):
 class TestCustomCert(tservers.DaemonTests):
     ssl = True
     ssloptions = dict(
-        certs=[(b"*", tutils.test_data.path("pathod/data/testkey.pem"))],
+        certs=[("*", tutils.test_data.path("pathod/data/testkey.pem"))],
     )
 
     def test_connect(self):
@@ -154,7 +153,7 @@ class CommonTests(tservers.DaemonTests):
         c = tcp.TCPClient(("localhost", self.d.port))
         with c.connect():
             if self.ssl:
-                c.convert_to_ssl()
+                c.convert_to_tls()
             c.wfile.write(b"foo\n\n\n")
             c.wfile.flush()
             l = self.d.last_log()
@@ -242,7 +241,7 @@ class TestDaemonSSL(CommonTests):
         with c.connect():
             c.wfile.write(b"\0\0\0\0")
             with pytest.raises(exceptions.TlsException):
-                c.convert_to_ssl()
+                c.convert_to_tls()
             l = self.d.last_log()
             assert l["type"] == "error"
             assert "SSL" in l["msg"]
@@ -257,11 +256,6 @@ class TestHTTP2(tservers.DaemonTests):
     ssl = True
     nohang = True
 
-    @requires_alpn
     def test_http2(self):
         r, _ = self.pathoc(["GET:/"], ssl=True, use_http2=True)
         assert r[0].status_code == 800
-
-    def test_no_http2(self, disable_alpn):
-        with pytest.raises(NotImplementedError):
-            r, _ = self.pathoc(["GET:/"], ssl=True, use_http2=True)
