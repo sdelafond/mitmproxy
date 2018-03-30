@@ -1,6 +1,1 @@
-#0001-Refer-to-examples-path-in-a-way-that-s-compatible-wi.patch
-#0002-Prevent-chrome-devtools-LICENSE-from-being-installed.patch
-#0003-Do-not-call-full_coverage.patch
-#0004-brotli-is-packaged-as-python3-brotli-and-not-python3.patch
-#0005-Remove-jsbeautifier.patch
-#0006-Remove-all-upper-bounds-on-versioned-conflicts-follo.patch
+0001-Do-not-run-full-coverage-tests.patch

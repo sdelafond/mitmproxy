@@ -1,21 +1,20 @@
 From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
-Date: Fri, 7 Jul 2017 11:58:22 +0200
-Subject: Do not call full_coverage
+Date: Fri, 30 Mar 2018 11:06:39 +0200
+Subject: Do not run full-coverage tests
 
 ---
- setup.cfg        | 102 -------------------------------------------------------
- test/conftest.py |   2 +-
- 2 files changed, 1 insertion(+), 103 deletions(-)
+ setup.cfg        | 78 --------------------------------------------------------
+ test/conftest.py |  2 --
+ 2 files changed, 80 deletions(-)
 
 diff --git a/setup.cfg b/setup.cfg
-index 52f51f2..775f457 100644
+index 592cc2e..dc07038 100644
 --- a/setup.cfg
 +++ b/setup.cfg
-@@ -8,105 +8,3 @@ addons = file,open,basestring,xrange,unicode,long,cmp
- [tool:pytest]
+@@ -9,83 +9,5 @@ addons = file,open,basestring,xrange,unicode,long,cmp
  testpaths = test
  addopts = --capture=no --color=yes
--
+ 
 -[coverage:run]
 -branch = False
 -omit = *contrib*, *tnetstring*, *platform*, *main.py
@@ -26,31 +25,21 @@ index 52f51f2..775f457 100644
 -    pragma: no cover
 -    raise NotImplementedError()
 -
+ [mypy-mitmproxy.contrib.*]
+ ignore_errors = True
+-
 -[tool:full_coverage]
 -exclude =
--    mitmproxy/contentviews/__init__.py
--    mitmproxy/contentviews/wbxml.py
--    mitmproxy/contentviews/xml_html.py
--    mitmproxy/net/tcp.py
--    mitmproxy/net/http/cookies.py
--    mitmproxy/net/http/encoding.py
--    mitmproxy/net/http/message.py
--    mitmproxy/net/http/url.py
--    mitmproxy/proxy/protocol/
--    mitmproxy/proxy/config.py
+-    mitmproxy/proxy/protocol/base.py
+-    mitmproxy/proxy/protocol/http.py
+-    mitmproxy/proxy/protocol/http1.py
+-    mitmproxy/proxy/protocol/http2.py
+-    mitmproxy/proxy/protocol/http_replay.py
+-    mitmproxy/proxy/protocol/rawtcp.py
+-    mitmproxy/proxy/protocol/tls.py
 -    mitmproxy/proxy/root_context.py
 -    mitmproxy/proxy/server.py
 -    mitmproxy/tools/
--    mitmproxy/certs.py
--    mitmproxy/connections.py
--    mitmproxy/controller.py
--    mitmproxy/export.py
--    mitmproxy/flow.py
--    mitmproxy/flowfilter.py
--    mitmproxy/http.py
--    mitmproxy/io_compat.py
--    mitmproxy/master.py
--    mitmproxy/optmanager.py
 -    pathod/pathoc.py
 -    pathod/pathod.py
 -    pathod/test.py
@@ -58,23 +47,15 @@ index 52f51f2..775f457 100644
 -
 -[tool:individual_coverage]
 -exclude =
--    mitmproxy/addonmanager.py
 -    mitmproxy/addons/onboardingapp/app.py
 -    mitmproxy/addons/termlog.py
--    mitmproxy/certs.py
--    mitmproxy/connections.py
 -    mitmproxy/contentviews/base.py
--    mitmproxy/contentviews/wbxml.py
--    mitmproxy/contentviews/xml_html.py
 -    mitmproxy/controller.py
 -    mitmproxy/ctx.py
 -    mitmproxy/exceptions.py
--    mitmproxy/export.py
 -    mitmproxy/flow.py
--    mitmproxy/flowfilter.py
--    mitmproxy/http.py
--    mitmproxy/io.py
--    mitmproxy/io_compat.py
+-    mitmproxy/io/io.py
+-    mitmproxy/io/tnetstring.py
 -    mitmproxy/log.py
 -    mitmproxy/master.py
 -    mitmproxy/net/check.py
@@ -84,8 +65,8 @@ index 52f51f2..775f457 100644
 -    mitmproxy/net/http/multipart.py
 -    mitmproxy/net/http/url.py
 -    mitmproxy/net/tcp.py
+-    mitmproxy/net/tls.py
 -    mitmproxy/options.py
--    mitmproxy/optmanager.py
 -    mitmproxy/proxy/config.py
 -    mitmproxy/proxy/modes/http_proxy.py
 -    mitmproxy/proxy/modes/reverse_proxy.py
@@ -98,11 +79,8 @@ index 52f51f2..775f457 100644
 -    mitmproxy/proxy/protocol/http_replay.py
 -    mitmproxy/proxy/protocol/rawtcp.py
 -    mitmproxy/proxy/protocol/tls.py
--    mitmproxy/proxy/protocol/websocket.py
 -    mitmproxy/proxy/root_context.py
 -    mitmproxy/proxy/server.py
--    mitmproxy/stateobject.py
--    mitmproxy/types/multidict.py
 -    mitmproxy/utils/bits.py
 -    pathod/language/actions.py
 -    pathod/language/base.py
@@ -118,15 +96,15 @@ index 52f51f2..775f457 100644
 -    pathod/protocols/websockets.py
 -    pathod/test.py
 diff --git a/test/conftest.py b/test/conftest.py
-index b4e1da9..c0d699f 100644
+index 27918cf..0a55373 100644
 --- a/test/conftest.py
 +++ b/test/conftest.py
-@@ -6,7 +6,7 @@ from contextlib import contextmanager
+@@ -3,8 +3,6 @@ import socket
  
- import mitmproxy.net.tcp
+ import pytest
  
 -pytest_plugins = ('test.full_coverage_plugin',)
-+#pytest_plugins = ('test.full_coverage_plugin',)
- 
- requires_alpn = pytest.mark.skipif(
-     not mitmproxy.net.tcp.HAS_ALPN,
+-
+ skip_windows = pytest.mark.skipif(
+     os.name == "nt",
+     reason='Skipping due to Windows'
