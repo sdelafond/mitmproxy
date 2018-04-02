@@ -7,10 +7,6 @@ Files: *
 Copyright: 2013–2016, Aldo Cortesi <aldo@corte.si>
 License: Expat
 
-Files: mitmproxy/contrib/tls_parser.py
-Copyright: Individual contributors
-License: BSD-3-clause or Apache-2.0
-
 Files: mitmproxy/contrib/wbxml/*
 Copyright: 2014, David Shaw <david.shaw.aw@gmail.com>
 License: Expat
@@ -67,10 +63,6 @@ License: BSD-3-clause
  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
  DAMAGE.
-
-License: Apache-2.0
- On Debian systems the full text of the Apache Software License 2.0 can be
- found in the `/usr/share/common-licenses/Apache-2.0' file.
 
 License: GPL-3+
  This program is free software: you can redistribute it and/or modify
