@@ -11,7 +11,7 @@ MAN_PAGES := $(shell cat debian/mitmproxy.manpages)
 	dh $@ --with python3 --buildsystem=pybuild
 
 override_dh_python3:
-	dh_python3 --no-guessing-deps
+	dh_python3
 	rm -fr debian/mitmproxy/usr/lib/python3/dist-packages/mitmproxy/addons/onboardingapp/static/fontawesome/
 	rm -fr debian/mitmproxy/usr/lib/python3/dist-packages/mitmproxy/tools/web/static/fonts/
 
