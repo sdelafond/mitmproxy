@@ -1,2 +1,3 @@
 0001-Do-not-run-full-coverage-tests.patch
 0002-Remove-all-upper-boundaries-on-versioned-dependencie.patch
+0003-Remove-test_xss_scanner.py-for-now.patch
