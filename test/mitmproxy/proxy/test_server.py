@@ -10,7 +10,6 @@ from mitmproxy import certs
 from mitmproxy import exceptions
 from mitmproxy import http
 from mitmproxy import options
-from mitmproxy.addons import proxyauth
 from mitmproxy.addons import script
 from mitmproxy.net import socks
 from mitmproxy.net import tcp
@@ -238,28 +237,14 @@ class TestHTTP(tservers.HTTPProxyTest, CommonMixin):
                 p.request("get:'%s'" % response)
 
     def test_reconnect(self):
-        req = "get:'%s/p/200:b@1'" % self.server.urlbase
+        req = "get:'%s/p/200:b@1:da'" % self.server.urlbase
         p = self.pathoc()
 
-        class MockOnce:
-            call = 0
-
-            def mock_once(self, http1obj, req):
-                self.call += 1
-                if self.call == 1:
-                    raise exceptions.TcpDisconnect
-                else:
-                    headers = http1.assemble_request_head(req)
-                    http1obj.server_conn.wfile.write(headers)
-                    http1obj.server_conn.wfile.flush()
-
         with p.connect():
-            with mock.patch("mitmproxy.proxy.protocol.http1.Http1Layer.send_request_headers",
-                            side_effect=MockOnce().mock_once, autospec=True):
-                # Server disconnects while sending headers but mitmproxy reconnects
-                resp = p.request(req)
-                assert resp
-                assert resp.status_code == 200
+            assert p.request(req)
+            # Server has disconnected. Mitmproxy should detect this, and reconnect.
+            assert p.request(req)
+            assert p.request(req)
 
     def test_get_connection_switching(self):
         req = "get:'%s/p/200:b@1'"
@@ -304,46 +289,6 @@ class TestHTTP(tservers.HTTPProxyTest, CommonMixin):
         with p.connect():
             assert p.request(req).status_code == 200
             assert self.server.last_log()["request"]["first_line_format"] == "relative"
-
-
-class TestHTTPAuth(tservers.HTTPProxyTest):
-    def test_auth(self):
-        self.master.addons.add(proxyauth.ProxyAuth())
-        self.master.addons.trigger(
-            "configure", self.master.options.keys()
-        )
-        self.master.options.proxyauth = "test:test"
-        assert self.pathod("202").status_code == 407
-        p = self.pathoc()
-        with p.connect():
-            ret = p.request("""
-                get
-                'http://localhost:%s/p/202'
-                h'%s'='%s'
-            """ % (
-                self.server.port,
-                "Proxy-Authorization",
-                proxyauth.mkauth("test", "test")
-            ))
-        assert ret.status_code == 202
-
-
-class TestHTTPReverseAuth(tservers.ReverseProxyTest):
-    def test_auth(self):
-        self.master.addons.add(proxyauth.ProxyAuth())
-        self.master.options.proxyauth = "test:test"
-        assert self.pathod("202").status_code == 401
-        p = self.pathoc()
-        with p.connect():
-            ret = p.request("""
-                get
-                '/p/202'
-                h'%s'='%s'
-            """ % (
-                "Authorization",
-                proxyauth.mkauth("test", "test")
-            ))
-        assert ret.status_code == 202
 
 
 class TestHTTPS(tservers.HTTPProxyTest, CommonMixin, TcpMixin):
@@ -1096,22 +1041,6 @@ class TestProxyChainingSSLReconnect(tservers.HTTPUpstreamProxyTest):
         request again.
         """
 
-        class MockOnce:
-            call = 0
-
-            def mock_once(self, http1obj, req):
-                self.call += 1
-
-                if self.call == 2:
-                    headers = http1.assemble_request_head(req)
-                    http1obj.server_conn.wfile.write(headers)
-                    http1obj.server_conn.wfile.flush()
-                    raise exceptions.TcpDisconnect
-                else:
-                    headers = http1.assemble_request_head(req)
-                    http1obj.server_conn.wfile.write(headers)
-                    http1obj.server_conn.wfile.flush()
-
         self.chain[0].tmaster.addons.add(RequestKiller([1, 2]))
         self.chain[1].tmaster.addons.add(RequestKiller([1]))
 
@@ -1126,9 +1055,7 @@ class TestProxyChainingSSLReconnect(tservers.HTTPUpstreamProxyTest):
             assert len(self.chain[0].tmaster.state.flows) == 1
             assert len(self.chain[1].tmaster.state.flows) == 1
 
-            with mock.patch("mitmproxy.proxy.protocol.http1.Http1Layer.send_request_headers",
-                            side_effect=MockOnce().mock_once, autospec=True):
-                req = p.request("get:'/p/418:b\"content2\"'")
+            req = p.request("get:'/p/418:b\"content2\"'")
 
             assert req.status_code == 502
 

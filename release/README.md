@@ -16,7 +16,11 @@ Make sure run all these steps on the correct branch you want to create a new rel
 - Attach all files from the new release folder on https://snapshots.mitmproxy.org
 
 ## PyPi
-- Upload wheel to pypi: `twine upload <mitmproxy-...-.whl`
+- `tox -e rtool -- upload-release`
+
+## Homebrew
+- `tox -e rtool -- homebrew-pr`
+- The Homebrew maintainers are typically very fast and detect our new relese within a day, but we can be a nice citizen and create the PR ourself.
 
 ## Docker
 - Update docker-releases repo
@@ -28,6 +32,13 @@ Make sure run all these steps on the correct branch you want to create a new rel
     * `2.0.0` for new major versions
     * `2.0.2` for new patch versions
 - Update `latest` tag [here](https://hub.docker.com/r/mitmproxy/mitmproxy/~/settings/automated-builds/)
+- Check that the build for this tag succeeds [https://hub.docker.com/r/mitmproxy/mitmproxy/builds/](here)
+- If build failed:
+  - Fix it and commit
+  - `git tag 3.0.2` the new commit
+  - `git push origin :refs/tags/3.0.2` to delete the old remote tag
+  - `git push --tags` to push the new tag
+  - Check the build details page again
 
 ## Prepare for next release
 
