@@ -6,7 +6,7 @@ import mitmproxy.options
 from mitmproxy import addonmanager
 from mitmproxy import command
 from mitmproxy import eventsequence
-from mitmproxy.addons import script
+from mitmproxy.addons import script, core
 
 
 class TestAddons(addonmanager.AddonManager):
@@ -59,13 +59,19 @@ class context:
         provides a number of helper methods for common testing scenarios.
     """
 
-    def __init__(self, master=None, options=None):
+    def __init__(self, *addons, options=None, loadcore=True):
         options = options or mitmproxy.options.Options()
-        self.master = master or RecordingMaster(
+        self.master = RecordingMaster(
             options
         )
         self.options = self.master.options
         self.wrapped = None
+
+        if loadcore:
+            self.master.addons.add(core.Core())
+
+        for a in addons:
+            self.master.addons.add(a)
 
     def ctx(self):
         """
@@ -134,7 +140,7 @@ class context:
 
     def command(self, func, *args):
         """
-            Invoke a command function with a list of string arguments within a command context, mimicing the actual command environment.
+            Invoke a command function with a list of string arguments within a command context, mimicking the actual command environment.
         """
         cmd = command.Command(self.master.commands, "test.command", func)
         return cmd.call(args)

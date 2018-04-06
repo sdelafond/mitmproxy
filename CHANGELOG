@@ -1,6 +1,18 @@
-23 February 2018: mitmproxy 3.0
+05 April 2018: mitmproxy 3.0.4
 
-  * Fix a quote-related issue affecting the mitmproxy console command prompt
+  * Fix an issue that caused mitmproxy to not retry HTTP requests on timeout.
+
+  * Various other fixes (@kira0204, @fenilgandhi, @tran-tien-dat, @smonami, 
+  @luzpaz, @fristonio, @kajojify, @Oliver-Fish, @hcbarry, @jplochocki, @MikeShi42,
+  @ghillu, @emilstahl)
+
+25 February 2018: mitmproxy 3.0.3
+
+  * Fix an issue that caused mitmproxy to lose keyboard control after spawning an external editor.
+
+23 February 2018: mitmproxy 3.0.1
+
+  * Fix a quote-related issue affecting the mitmproxy console command prompt.
 
 22 February 2018: mitmproxy 3.0
 
@@ -221,11 +233,11 @@
 
     * All mitmproxy tools are now Python 3 only! We plan to support Python 3.5 and higher.
 
-    * Web-Based User Interface: Mitmproxy now offically has a web-based user interface
+    * Web-Based User Interface: Mitmproxy now officially has a web-based user interface
       called mitmweb. We consider it stable for all features currently exposed
       in the UI, but it still misses a lot of mitmproxy’s options.
 
-    * Windows Compatibility: With mitmweb, mitmproxy is now useable on Windows.
+    * Windows Compatibility: With mitmweb, mitmproxy is now usable on Windows.
       We are also introducing an installer (kindly sponsored by BitRock) that
       simplifies setup.
 
@@ -387,7 +399,7 @@
     * libmproxy: Avoid double-connect in case of TLS Server Name Indication.
       This yields a massive speedup for TLS handshakes.
 
-    * libmproxy: Prevent unneccessary upstream connections (macmantrl)
+    * libmproxy: Prevent unnecessary upstream connections (macmantrl)
 
     * Inline Scripts: New API for HTTP Headers:
       http://docs.mitmproxy.org/en/latest/dev/models.html#netlib.http.Headers
@@ -650,7 +662,7 @@
       JSON, Javascript, images, XML, URL-encoded forms, as well as hexadecimal
       and raw views.
 
-    * Add Set Headers, analagous to replacement hooks. Defines headers that are set
+    * Add Set Headers, analogous to replacement hooks. Defines headers that are set
       on flows, based on a matching pattern.
 
     * A graphical editor for path components in mitmproxy.
@@ -708,7 +720,7 @@
       expanding random and generated portions, and logging a reproducible
       specification.
 
-    * Streamline the specification langauge. HTTP response message is now
+    * Streamline the specification language. HTTP response message is now
       specified using the "r" mnemonic.
 
     * Add a "u" mnemonic for specifying User-Agent strings. Add a set of

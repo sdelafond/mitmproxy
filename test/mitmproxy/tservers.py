@@ -5,6 +5,7 @@ import sys
 from unittest import mock
 
 import mitmproxy.platform
+from mitmproxy.addons import core
 from mitmproxy.proxy.config import ProxyConfig
 from mitmproxy.proxy.server import ProxyServer
 from mitmproxy import controller
@@ -132,6 +133,7 @@ class ProxyTestBase:
 
         cls.options = cls.get_options()
         tmaster = cls.masterclass(cls.options)
+        tmaster.addons.add(core.Core())
         cls.proxy = ProxyThread(tmaster)
         cls.proxy.start()
 
@@ -222,12 +224,12 @@ class HTTPProxyTest(ProxyTestBase):
             p = pathod.pathoc.Pathoc(
                 ("127.0.0.1", self.proxy.port), True, fp=None
             )
-            with p.connect((options.APP_HOST, options.APP_PORT)):
+            with p.connect((self.master.options.onboarding_host, self.master.options.onbarding_port)):
                 return p.request("get:'%s'" % page)
         else:
             p = self.pathoc()
             with p.connect():
-                return p.request("get:'http://%s%s'" % (options.APP_HOST, page))
+                return p.request("get:'http://%s%s'" % (self.master.options.onboarding_host, page))
 
 
 class TransparentProxyTest(ProxyTestBase):
@@ -343,6 +345,7 @@ class ChainProxyTest(ProxyTestBase):
         for _ in range(cls.n):
             opts = cls.get_options()
             tmaster = cls.masterclass(opts)
+            tmaster.addons.add(core.Core())
             proxy = ProxyThread(tmaster)
             proxy.start()
             cls.chain.insert(0, proxy)

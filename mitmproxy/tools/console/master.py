@@ -87,14 +87,16 @@ class ConsoleMaster(master.Master):
         )
 
     def sig_add_log(self, event_store, entry: log.LogEntry):
-        if log.log_tier(self.options.verbosity) < log.log_tier(entry.level):
+        if log.log_tier(self.options.console_eventlog_verbosity) < log.log_tier(entry.level):
             return
         if entry.level in ("error", "warn", "alert"):
             if self.first_tick:
                 self.start_err = entry
             else:
                 signals.status_message.send(
-                    message=(entry.level, "{}: {}".format(entry.level.title(), entry.msg)),
+                    message=(entry.level,
+                             "{}: {}".format(entry.level.title(),
+                                             str(entry.msg).lstrip())),
                     expire=5
                 )
 

@@ -1,5 +1,5 @@
 """
-    This module manges and invokes typed commands.
+    This module manages and invokes typed commands.
 """
 import inspect
 import types
@@ -54,7 +54,7 @@ class Command:
 
         self.has_positional = False
         for i in sig.parameters.values():
-            # This is the kind for *args paramters
+            # This is the kind for *args parameters
             if i.kind == i.VAR_POSITIONAL:
                 self.has_positional = True
         self.paramtypes = [v.annotation for v in sig.parameters.values()]
@@ -131,8 +131,13 @@ class CommandManager(mitmproxy.types._CommandBase):
         for i in dir(addon):
             if not i.startswith("__"):
                 o = getattr(addon, i)
-                if hasattr(o, "command_path"):
-                    self.add(o.command_path, o)
+                try:
+                    is_command = hasattr(o, "command_path")
+                except Exception:
+                    pass  # hasattr may raise if o implements __getattr__.
+                else:
+                    if is_command:
+                        self.add(o.command_path, o)
 
     def add(self, path: str, func: typing.Callable):
         self.commands[path] = Command(self, path, func)

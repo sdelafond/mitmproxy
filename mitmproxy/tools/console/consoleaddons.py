@@ -7,6 +7,7 @@ from mitmproxy import command
 from mitmproxy import exceptions
 from mitmproxy import flow
 from mitmproxy import http
+from mitmproxy import log
 from mitmproxy import contentviews
 from mitmproxy.utils import strutils
 import mitmproxy.types
@@ -77,13 +78,23 @@ class ConsoleAddon:
 
     def load(self, loader):
         loader.add_option(
+            "console_default_contentview", str, "auto",
+            "The default content view mode.",
+            choices = [i.name.lower() for i in contentviews.views]
+        )
+        loader.add_option(
+            "console_eventlog_verbosity", str, 'info',
+            "EventLog verbosity.",
+            choices=log.LogTierOrder
+        )
+        loader.add_option(
             "console_layout", str, "single",
             "Console layout.",
             choices=sorted(console_layouts),
         )
         loader.add_option(
             "console_layout_headers", bool, True,
-            "Show layout comonent headers",
+            "Show layout component headers",
         )
         loader.add_option(
             "console_focus_follow", bool, False,
@@ -109,15 +120,6 @@ class ConsoleAddon:
             Returns the available options for the console_layout option.
         """
         return ["single", "vertical", "horizontal"]
-
-    @command.command("console.intercept.toggle")
-    def intercept_toggle(self) -> None:
-        """
-            Toggles interception on/off leaving intercept filters intact.
-        """
-        ctx.options.update(
-            intercept_active = not ctx.options.intercept_active
-        )
 
     @command.command("console.layout.cycle")
     def layout_cycle(self) -> None:
@@ -227,7 +229,7 @@ class ConsoleAddon:
     ) -> None:
         """
             Prompt the user to choose from a specified list of strings, then
-            invoke another command with all occurances of {choice} replaced by
+            invoke another command with all occurrences of {choice} replaced by
             the choice the user made.
         """
         def callback(opt):
@@ -253,7 +255,7 @@ class ConsoleAddon:
     ) -> None:
         """
             Prompt the user to choose from a list of strings returned by a
-            command, then invoke another command with all occurances of {choice}
+            command, then invoke another command with all occurrences of {choice}
             replaced by the choice the user made.
         """
         choices = ctx.master.commands.call_args(choicecmd, [])
@@ -540,7 +542,7 @@ class ConsoleAddon:
             [
                 "@focus",
                 "flowview_mode_%s" % idx,
-                self.master.options.default_contentview,
+                self.master.options.console_default_contentview,
             ]
         )
 

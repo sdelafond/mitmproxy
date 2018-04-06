@@ -147,6 +147,10 @@ class View(collections.Sequence):
 
     def load(self, loader):
         loader.add_option(
+            "view_filter", typing.Optional[str], None,
+            "Limit the view to matching flows."
+        )
+        loader.add_option(
             "view_order", str, "time",
             "Flow sort order.",
             choices=list(map(lambda c: c[1], orders)),
@@ -325,7 +329,7 @@ class View(collections.Sequence):
         key: str
     ) -> None:
         """
-            Toggle a boolean value in the settings store, seting the value to
+            Toggle a boolean value in the settings store, setting the value to
             the string "true" or "false".
         """
         updated = []
