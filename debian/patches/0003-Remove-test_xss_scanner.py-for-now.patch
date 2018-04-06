@@ -3,16 +3,16 @@ Date: Mon, 2 Apr 2018 09:47:51 +0200
 Subject: Remove test_xss_scanner.py for now
 
 ---
- test/examples/test_xss_scanner.py | 374 --------------------------------------
- 1 file changed, 374 deletions(-)
+ test/examples/test_xss_scanner.py | 386 --------------------------------------
+ 1 file changed, 386 deletions(-)
  delete mode 100644 test/examples/test_xss_scanner.py
 
 diff --git a/test/examples/test_xss_scanner.py b/test/examples/test_xss_scanner.py
 deleted file mode 100644
-index 8cf06a2..0000000
+index 1d723d5..0000000
 --- a/test/examples/test_xss_scanner.py
 +++ /dev/null
-@@ -1,374 +0,0 @@
+@@ -1,386 +0,0 @@
 -import pytest
 -import requests
 -from examples.complex import xss_scanner as xss
@@ -311,11 +311,22 @@ index 8cf06a2..0000000
 -        assert xss_info == expected_xss_info
 -        assert sqli_info is None
 -
+-    def mocked_socket_gethostbyname(domain):
+-        claimed_domains = ["google.com"]
+-        if domain not in claimed_domains:
+-            from socket import gaierror
+-            raise gaierror("[Errno -2] Name or service not known")
+-        else:
+-            return '216.58.221.46'
+-
 -    @pytest.fixture
 -    def logger(self):
 -        class Logger():
 -            def __init__(self):
 -                self.args = []
+-
+-            def info(self, str):
+-                self.args.append(str)
 -
 -            def error(self, str):
 -                self.args.append(str)
@@ -324,6 +335,7 @@ index 8cf06a2..0000000
 -    def test_find_unclaimed_URLs(self, monkeypatch, logger):
 -        logger.args = []
 -        monkeypatch.setattr("mitmproxy.ctx.log", logger)
+-        monkeypatch.setattr("socket.gethostbyname", self.mocked_socket_gethostbyname)
 -        xss.find_unclaimed_URLs("<html><script src=\"http://google.com\"></script></html>",
 -                                "https://example.com")
 -        assert logger.args == []
