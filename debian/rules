@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
 export PYBUILD_NAME=mitmproxy
-export PYBUILD_TEST_ARGS="-k-TestHARDump -k-TestScripts -k-TestApp -k-test_mitmweb -k-test_mitmdump"
+export PYBUILD_TEST_ARGS="-k-TestHARDump -k-TestScripts -k-test_mitmweb -k-test_mitmdump"
 
 export LC_ALL=C.UTF-8
 
