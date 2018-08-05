@@ -1,3 +1,10 @@
+mitmproxy (4.0.4-1) unstable; urgency=medium
+
+  * New upstream version 4.0.4
+  * Remove CVE-2018-14505 patch
+
+ -- Sebastien Delafond <seb@debian.org>  Sun, 05 Aug 2018 09:18:56 +0200
+
 mitmproxy (3.0.4-1) unstable; urgency=medium
 
   * New upstream version 3.0.4
