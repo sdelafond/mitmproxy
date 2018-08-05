@@ -1,3 +1,11 @@
+mitmproxy (3.0.4-1) unstable; urgency=medium
+
+  * New upstream version 3.0.4
+  * Rediff patches
+  * Fix CVE-2018-14505 (Closes: #904293)
+
+ -- Sebastien Delafond <seb@debian.org>  Sat, 04 Aug 2018 09:19:09 +0200
+
 mitmproxy (3.0.3-1) unstable; urgency=medium
 
   * New upstream revision (Closes: #894436)
