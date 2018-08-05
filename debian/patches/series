@@ -2,3 +2,4 @@
 0002-Remove-all-upper-boundaries-on-versioned-dependencie.patch
 0003-Remove-test_xss_scanner.py-for-now.patch
 004_CVE-2018-14505.patch
+0005-s-matches-match-s-msg-message-in-pytest.raises.patch

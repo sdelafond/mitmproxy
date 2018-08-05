@@ -1,0 +1,49 @@
+From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
+Date: Sun, 5 Aug 2018 08:01:34 +0200
+Subject: s/matches/match/ & s/msg/message/ in pytest.raises
+
+---
+ test/mitmproxy/contentviews/test_protobuf.py | 2 +-
+ test/mitmproxy/test_connections.py           | 2 +-
+ test/mitmproxy/test_stateobject.py           | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/test/mitmproxy/contentviews/test_protobuf.py b/test/mitmproxy/contentviews/test_protobuf.py
+index 6c6e37f..d0c4f42 100644
+--- a/test/mitmproxy/contentviews/test_protobuf.py
++++ b/test/mitmproxy/contentviews/test_protobuf.py
+@@ -16,7 +16,7 @@ def test_view_protobuf_request():
+     content_type, output = v(raw)
+     assert content_type == "Protobuf"
+     assert output == [[('text', '1: 3bbc333c-e61c-433b-819a-0b9a8cc103b8')]]
+-    with pytest.raises(ValueError, matches="Failed to parse input."):
++    with pytest.raises(ValueError, match="Failed to parse input."):
+         v(b'foobar')
+ 
+ 
+diff --git a/test/mitmproxy/test_connections.py b/test/mitmproxy/test_connections.py
+index 845a904..acd98eb 100644
+--- a/test/mitmproxy/test_connections.py
++++ b/test/mitmproxy/test_connections.py
+@@ -160,7 +160,7 @@ class TestServerConnection:
+ 
+     def test_sni(self):
+         c = connections.ServerConnection(('', 1234))
+-        with pytest.raises(ValueError, matches='sni must be str, not '):
++        with pytest.raises(ValueError, match='sni must be str, not '):
+             c.establish_tls(sni=b'foobar')
+ 
+     def test_state(self):
+diff --git a/test/mitmproxy/test_stateobject.py b/test/mitmproxy/test_stateobject.py
+index bd5d179..0cd2337 100644
+--- a/test/mitmproxy/test_stateobject.py
++++ b/test/mitmproxy/test_stateobject.py
+@@ -93,7 +93,7 @@ def test_tuple():
+ 
+ def test_tuple_err():
+     a = TTuple(None)
+-    with pytest.raises(ValueError, msg="Invalid data"):
++    with pytest.raises(ValueError, message="Invalid data"):
+         a.set_state({"x": (42,)})
+ 
+ 
