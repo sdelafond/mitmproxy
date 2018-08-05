@@ -10,7 +10,6 @@ The View:
 """
 import collections
 import typing
-import os
 
 import blinker
 import sortedcontainers
@@ -294,6 +293,7 @@ class View(collections.Sequence):
         self._refilter()
         self.sig_store_refresh.send(self)
 
+    @command.command("view.marked.toggle")
     def add(self, flows: typing.Sequence[mitmproxy.flow.Flow]) -> None:
         """
             Adds a flow to the state. If the flow already exists, it is
@@ -359,9 +359,8 @@ class View(collections.Sequence):
         """
             Load flows into the view, without processing them with addons.
         """
-        spath = os.path.expanduser(path)
         try:
-            with open(spath, "rb") as f:
+            with open(path, "rb") as f:
                 for i in io.FlowReader(f).stream():
                     # Do this to get a new ID, so we can load the same file N times and
                     # get new flows each time. It would be more efficient to just have a
@@ -532,7 +531,7 @@ class Focus:
     """
     def __init__(self, v: View) -> None:
         self.view = v
-        self._flow = None  # type: mitmproxy.flow.Flow
+        self._flow: mitmproxy.flow.Flow = None
         self.sig_change = blinker.Signal()
         if len(self.view):
             self.flow = self.view[0]
@@ -589,7 +588,7 @@ class Focus:
 class Settings(collections.Mapping):
     def __init__(self, view: View) -> None:
         self.view = view
-        self._values = {}  # type: typing.MutableMapping[str, typing.Dict]
+        self._values: typing.MutableMapping[str, typing.Dict] = {}
         view.sig_store_remove.connect(self._sig_store_remove)
         view.sig_store_refresh.connect(self._sig_store_refresh)
 

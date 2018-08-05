@@ -14,7 +14,7 @@ from mitmproxy.net.http import status_codes
 import mitmproxy.types
 
 
-CA_DIR = "~/.mitmproxy"
+CONF_DIR = "~/.mitmproxy"
 LISTEN_PORT = 8080
 
 
@@ -179,7 +179,7 @@ class Core:
         """
             Quickly set a number of common values on flows.
         """
-        val = sval  # type: typing.Union[int, str]
+        val: typing.Union[int, str] = sval
         if spec == "status_code":
             try:
                 val = int(val)  # type: ignore
