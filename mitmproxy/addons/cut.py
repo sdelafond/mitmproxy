@@ -1,6 +1,8 @@
 import io
 import csv
 import typing
+import os.path
+
 from mitmproxy import command
 from mitmproxy import exceptions
 from mitmproxy import flow
@@ -24,7 +26,7 @@ def is_addr(v):
 
 def extract(cut: str, f: flow.Flow) -> typing.Union[str, bytes]:
     path = cut.split(".")
-    current = f  # type: typing.Any
+    current: typing.Any = f
     for i, spec in enumerate(path):
         if spec.startswith("_"):
             raise exceptions.CommandError("Can't access internal attribute %s" % spec)
@@ -65,7 +67,7 @@ class Cut:
             or "false", "bytes" are preserved, and all other values are
             converted to strings.
         """
-        ret = []  # type:typing.List[typing.List[typing.Union[str, bytes]]]
+        ret: typing.List[typing.List[typing.Union[str, bytes]]] = []
         for f in flows:
             ret.append([extract(c, f) for c in cuts])
         return ret  # type: ignore
@@ -87,7 +89,8 @@ class Cut:
         append = False
         if path.startswith("+"):
             append = True
-            path = mitmproxy.types.Path(path[1:])
+            epath = os.path.expanduser(path[1:])
+            path = mitmproxy.types.Path(epath)
         try:
             if len(cuts) == 1 and len(flows) == 1:
                 with open(path, "ab" if append else "wb") as fp:

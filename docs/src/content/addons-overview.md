@@ -35,7 +35,7 @@ Here, for example, is a command that shows the API documentation for the
 mitmproxy's HTTP flow classes:
 
 {{< highlight bash  >}}
-pydoc mimtproxy.http
+pydoc mitmproxy.http
 {{< /highlight >}}
 
 You will be referring to the mitmproxy API documentation frequently, so keep
@@ -64,7 +64,7 @@ Here are a few things to note about the code above:
   finds into the addons mechanism.
 - Addons are just objects - in this case our addon is an instance of `Counter`.
 - The `request` method is an example of an **event**. Addons simply implement a
-  method for each event they wan to handle. Each event has a signature
+  method for each event they want to handle. Each event has a signature
   consisting of arguments that are passed to the method. For `request`, this is
   an instance of `mitmproxy.http.HTTPFlow`.
 - Finally, the `ctx` module is a holdall module that exposes a set of standard

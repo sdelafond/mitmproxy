@@ -13,7 +13,7 @@ with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
 with open(os.path.join(here, "mitmproxy", "version.py")) as f:
-    VERSION = re.search(r'VERSION = "(.+?)(?:-0x|")', f.read()).group(1)
+    VERSION = re.search(r'VERSION = "(.+?)"', f.read()).group(1)
 
 setup(
     name="mitmproxy",
@@ -35,7 +35,6 @@ setup(
         "Programming Language :: Python",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3 :: Only",
-        "Programming Language :: Python :: 3.5",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Security",
@@ -65,19 +64,19 @@ setup(
         "brotlipy>=0.7.0,<0.8",
         "certifi>=2015.11.20.1",  # no semver here - this should always be on the last release!
         "click>=6.2, <7",
-        "cryptography>=2.1.4,<2.3",
+        "cryptography>=2.1.4,<2.4",
         "h2>=3.0.1,<4",
         "hyperframe>=5.1.0,<6",
         "kaitaistruct>=0.7,<0.9",
-        "ldap3>=2.4,<2.5",
+        "ldap3>=2.5,<2.6",
         "passlib>=1.6.5, <1.8",
         "pyasn1>=0.3.1,<0.5",
-        "pyOpenSSL>=17.5,<17.6",
+        "pyOpenSSL>=17.5,<18.1",
         "pyparsing>=2.1.3, <2.3",
         "pyperclip>=1.6.0, <1.7",
         "ruamel.yaml>=0.13.2, <0.16",
-        "sortedcontainers>=1.5.4, <1.6",
-        "tornado>=4.3,<5.1",
+        "sortedcontainers>=1.5.4,<2.1",
+        "tornado>=4.3,<5.2",
         "urwid>=2.0.1,<2.1",
         "wsproto>=0.11.0,<0.12.0",
     ],
@@ -86,16 +85,19 @@ setup(
             "pydivert>=2.0.3,<2.2",
         ],
         'dev': [
+            "asynctest>=0.12.0",
             "flake8>=3.5, <3.6",
-            "Flask>=0.10.1, <0.13",
-            "mypy>=0.580,<0.581",
+            "Flask>=1.0,<1.1",
+            "mypy>=0.590,<0.591",
+            "parver>=0.1,<2.0",
+            "pytest-asyncio>=0.8",
             "pytest-cov>=2.5.1,<3",
             "pytest-faulthandler>=1.3.1,<2",
             "pytest-timeout>=1.2.1,<2",
             "pytest-xdist>=1.22,<2",
             "pytest>=3.3,<4",
             "requests>=2.9.1, <3",
-            "tox>=2.3, <3",
+            "tox>=3.0,<3.2",
             "rstcheck>=2.2, <4.0",
         ],
         'examples': [

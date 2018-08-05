@@ -36,10 +36,10 @@ class ProxyConfig:
     def __init__(self, options: moptions.Options) -> None:
         self.options = options
 
-        self.check_ignore = None  # type: HostMatcher
-        self.check_tcp = None  # type: HostMatcher
-        self.certstore = None  # type: certs.CertStore
-        self.upstream_server = None  # type: typing.Optional[server_spec.ServerSpec]
+        self.check_ignore: HostMatcher = None
+        self.check_tcp: HostMatcher = None
+        self.certstore: certs.CertStore = None
+        self.upstream_server: typing.Optional[server_spec.ServerSpec] = None
         self.configure(options, set(options.keys()))
         options.changed.connect(self.configure)
 
@@ -49,7 +49,7 @@ class ProxyConfig:
         if "tcp_hosts" in updated:
             self.check_tcp = HostMatcher(options.tcp_hosts)
 
-        certstore_path = os.path.expanduser(options.cadir)
+        certstore_path = os.path.expanduser(options.confdir)
         if not os.path.exists(os.path.dirname(certstore_path)):
             raise exceptions.OptionsError(
                 "Certificate Authority parent directory does not exist: %s" %

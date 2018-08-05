@@ -1,8 +1,67 @@
+31 July 2018: mitmproxy 4.0.4
+
+    * Security: Protect mitmweb against DNS rebinding. (CVE-2018-14505, @atx)
+    * Reduce certificate lifetime to two years to be conformant with
+      the current CA/Browser Forum Baseline Requirements. (@muffl0n)
+      (https://cabforum.org/2017/03/17/ballot-193-825-day-certificate-lifetimes/)
+    * Update cryptography to version 2.3.
+
+15 June 2018: mitmproxy 4.0.3
+
+    * Add support for IPv6 transparent mode on Windows (#3174)
+    * Add Docker images for ARMv7 - Raspberry Pi (#3190)
+    * Major overhaul of our release workflow - you probably won't notice it, but for us it's a big thing!
+    * Fix the Python version detection on Python 3.5, we now show a more intuitive error message (#3188)
+    * Fix application shutdown on Windows (#3172)
+    * Fix IPv6 scope suffixes in block addon (#3164)
+    * Fix options update when added (#3157)
+    * Fix "Edit Flow" button in mitmweb (#3136)
+    
+15 June 2018: mitmproxy 4.0.2
+    * Skipped!
+    
+
+17 May 2018: mitmproxy 4.0.1
+
+  ** Bugfixes **
+    * The previous release had a packaging issue, so we bumped it to v4.0.1 and re-released it.
+    * This contains no actual bugfixes or new features.
+
+17 May 2018: mitmproxy 4.0
+
+  ** Features **
+    * mitmproxy now requires Python 3.6!
+    * Moved the core to asyncio - which gives us a very significant performance boost!
+    * Reduce memory consumption by using `SO_KEEPALIVE` (#3076)
+    * Export request as httpie command (#3031)
+    * Configure mitmproxy console keybindings with the keys.yaml file. See docs for more.
+
+  ** Breaking Changes **
+    * The --conf command-line flag is now --confdir, and specifies the mitmproxy configuration
+    directory, instead of the options yaml file (which is at `config.yaml` under the configuration directory).
+    * `allow_remote` got replaced by `block_global` and `block_private` (#3100)
+    * No more custom events (#3093)
+    * The `cadir` option has been renamed to `confdir`
+    * We no longer magically capture print statements in addons and translate
+    them to logs. Please use `ctx.log.info` explicitly.
+
+  ** Bugfixes **
+    * Correctly block connections from remote clients with IPv4-mapped IPv6 client addresses (#3099)
+    * Expand `~` in paths during the `cut` command (#3078)
+    * Remove socket listen backlog constraint
+    * Improve handling of user script exceptions (#3050, #2837)
+    * Ignore signal errors on windows
+    * Fix traceback for commands with un-terminated escape characters (#2810)
+    * Fix request replay when proxy is bound to local interface (#2647)
+    * Fix traceback when running scripts on a flow twice (#2838)
+    * Fix traceback when killing intercepted flow (#2879)
+    * And lots of typos, docs improvements, revamped examples, and general fixes!
+
 05 April 2018: mitmproxy 3.0.4
 
   * Fix an issue that caused mitmproxy to not retry HTTP requests on timeout.
 
-  * Various other fixes (@kira0204, @fenilgandhi, @tran-tien-dat, @smonami, 
+  * Various other fixes (@kira0204, @fenilgandhi, @tran-tien-dat, @smonami,
   @luzpaz, @fristonio, @kajojify, @Oliver-Fish, @hcbarry, @jplochocki, @MikeShi42,
   @ghillu, @emilstahl)
 
@@ -423,7 +482,7 @@
 24 July 2015: mitmproxy 0.13
 
     * Upstream certificate validation. See the --verify-upstream-cert,
-      --upstream-trusted-cadir and --upstream-trusted-ca parameters. Thanks to
+      --upstream-trusted-confdir and --upstream-trusted-ca parameters. Thanks to
       Kyle Morton (github.com/kyle-m) for his work on this.
 
     * Add HTTP transparent proxy mode. This uses the host headers from HTTP

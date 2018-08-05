@@ -65,6 +65,26 @@ class TestExportCurlCommand:
             export.curl_command(tcp_flow)
 
 
+class TestExportHttpieCommand:
+    def test_get(self, get_request):
+        result = """http GET http://address:22/path?a=foo&a=bar&b=baz 'header:qvalue' 'content-length:0'"""
+        assert export.httpie_command(get_request) == result
+
+    def test_post(self, post_request):
+        result = "http POST http://address:22/path 'content-length:256' <<< '{}'".format(
+            str(bytes(range(256)))[2:-1]
+        )
+        assert export.httpie_command(post_request) == result
+
+    def test_patch(self, patch_request):
+        result = """http PATCH http://address:22/path?query=param 'header:qvalue' 'content-length:7' <<< 'content'"""
+        assert export.httpie_command(patch_request) == result
+
+    def test_tcp(self, tcp_flow):
+        with pytest.raises(exceptions.CommandError):
+            export.httpie_command(tcp_flow)
+
+
 class TestRaw:
     def test_get(self, get_request):
         assert b"header: qvalue" in export.raw(get_request)
@@ -83,7 +103,7 @@ def test_export(tmpdir):
     f = str(tmpdir.join("path"))
     e = export.Export()
     with taddons.context():
-        assert e.formats() == ["curl", "raw"]
+        assert e.formats() == ["curl", "httpie", "raw"]
         with pytest.raises(exceptions.CommandError):
             e.file("nonexistent", tflow.tflow(resp=True), f)
 
@@ -95,23 +115,29 @@ def test_export(tmpdir):
         assert qr(f)
         os.unlink(f)
 
+        e.file("httpie", tflow.tflow(resp=True), f)
+        assert qr(f)
+        os.unlink(f)
+
 
 @pytest.mark.parametrize("exception, log_message", [
     (PermissionError, "Permission denied"),
     (IsADirectoryError, "Is a directory"),
     (FileNotFoundError, "No such file or directory")
 ])
-def test_export_open(exception, log_message, tmpdir):
+@pytest.mark.asyncio
+async def test_export_open(exception, log_message, tmpdir):
     f = str(tmpdir.join("path"))
     e = export.Export()
     with taddons.context() as tctx:
         with mock.patch("mitmproxy.addons.export.open") as m:
             m.side_effect = exception(log_message)
             e.file("raw", tflow.tflow(resp=True), f)
-            assert tctx.master.has_log(log_message, level="error")
+            assert await tctx.master.await_log(log_message, level="error")
 
 
-def test_clip(tmpdir):
+@pytest.mark.asyncio
+async def test_clip(tmpdir):
     e = export.Export()
     with taddons.context() as tctx:
         with pytest.raises(exceptions.CommandError):
@@ -126,8 +152,12 @@ def test_clip(tmpdir):
             assert pc.called
 
         with mock.patch('pyperclip.copy') as pc:
+            e.clip("httpie", tflow.tflow(resp=True))
+            assert pc.called
+
+        with mock.patch('pyperclip.copy') as pc:
             log_message = "Pyperclip could not find a " \
                           "copy/paste mechanism for your system."
             pc.side_effect = pyperclip.PyperclipException(log_message)
             e.clip("raw", tflow.tflow(resp=True))
-            assert tctx.master.has_log(log_message, level="error")
+            assert await tctx.master.await_log(log_message, level="error")

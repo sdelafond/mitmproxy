@@ -98,7 +98,7 @@ class FlowDetails(tabs.Tabs):
             msg, body = "", [urwid.Text([("error", "[content missing]")])]
             return msg, body
         else:
-            full = self.master.commands.call("view.getval @focus fullcontents false")
+            full = self.master.commands.execute("view.getval @focus fullcontents false")
             if full == "true":
                 limit = sys.maxsize
             else:
@@ -121,7 +121,7 @@ class FlowDetails(tabs.Tabs):
             viewmode, message
         )
         if error:
-            self.master.add_log(error, "debug")
+            self.master.log.debug(error)
         # Give hint that you have to tab for the response.
         if description == "No content" and isinstance(message, http.HTTPRequest):
             description = "No request content (press tab to view response)"
