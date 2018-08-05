@@ -1,17 +1,17 @@
 From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
-Date: Fri, 30 Mar 2018 11:06:39 +0200
-Subject: Do not run full-coverage tests
+Date: Sun, 5 Aug 2018 09:30:37 +0200
+Subject: Do no run full coverage tests
 
 ---
- setup.cfg        | 78 --------------------------------------------------------
+ setup.cfg        | 81 --------------------------------------------------------
  test/conftest.py |  2 --
- 2 files changed, 80 deletions(-)
+ 2 files changed, 83 deletions(-)
 
 diff --git a/setup.cfg b/setup.cfg
-index 592cc2e..dc07038 100644
+index 32b6aac..dc07038 100644
 --- a/setup.cfg
 +++ b/setup.cfg
-@@ -9,83 +9,5 @@ addons = file,open,basestring,xrange,unicode,long,cmp
+@@ -9,86 +9,5 @@ addons = file,open,basestring,xrange,unicode,long,cmp
  testpaths = test
  addopts = --capture=no --color=yes
  
@@ -44,6 +44,8 @@ index 592cc2e..dc07038 100644
 -    pathod/pathod.py
 -    pathod/test.py
 -    pathod/protocols/http2.py
+-    release/hooks
+-
 -
 -[tool:individual_coverage]
 -exclude =
@@ -95,11 +97,12 @@ index 592cc2e..dc07038 100644
 -    pathod/protocols/http2.py
 -    pathod/protocols/websockets.py
 -    pathod/test.py
+-    release/hooks
 diff --git a/test/conftest.py b/test/conftest.py
-index 27918cf..0a55373 100644
+index 7c7dec4..da401b4 100644
 --- a/test/conftest.py
 +++ b/test/conftest.py
-@@ -3,8 +3,6 @@ import socket
+@@ -5,8 +5,6 @@ from mitmproxy.utils import data
  
  import pytest
  

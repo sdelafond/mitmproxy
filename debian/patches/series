@@ -1,5 +1,5 @@
-0001-Do-not-run-full-coverage-tests.patch
-0002-Remove-all-upper-boundaries-on-versioned-dependencie.patch
-0003-Remove-test_xss_scanner.py-for-now.patch
-004_CVE-2018-14505.patch
-0005-s-matches-match-s-msg-message-in-pytest.raises.patch
+0001-Do-no-run-full-coverage-tests.patch
+0002-Remove-upper-bound-versions-dependencies.patch
+0003-Remove-test_xss_scanner.py.patch
+0004-Remove-test_cibuild.py.patch
+0005-Remove-test_readfile.py.patch

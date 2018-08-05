@@ -1,6 +1,6 @@
 From: =?utf-8?q?S=C3=A9bastien_Delafond?= <sdelafond@gmail.com>
-Date: Mon, 2 Apr 2018 09:47:51 +0200
-Subject: Remove test_xss_scanner.py for now
+Date: Sun, 5 Aug 2018 13:57:59 +0200
+Subject: Remove test_xss_scanner.py
 
 ---
  test/examples/test_xss_scanner.py | 386 --------------------------------------
