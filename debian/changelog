@@ -1,3 +1,9 @@
+mitmproxy (4.0.4-2) unstable; urgency=medium
+
+  * Add dependency on python3-h11 (Closes: #905587)
+
+ -- Sebastien Delafond <seb@debian.org>  Mon, 06 Aug 2018 19:47:21 +0200
+
 mitmproxy (4.0.4-1) unstable; urgency=medium
 
   * New upstream version 4.0.4
