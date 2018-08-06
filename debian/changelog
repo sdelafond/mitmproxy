@@ -1,3 +1,9 @@
+mitmproxy (4.0.4-3) unstable; urgency=medium
+
+  * Remove manpages, as they're way outdated and upstream is not interested in maintaining them (Closes: #905588)
+
+ -- Sebastien Delafond <seb@debian.org>  Mon, 06 Aug 2018 19:53:35 +0200
+
 mitmproxy (4.0.4-2) unstable; urgency=medium
 
   * Add dependency on python3-h11 (Closes: #905587)
