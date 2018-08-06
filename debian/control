@@ -36,7 +36,7 @@ Homepage: https://mitmproxy.org
 Package: mitmproxy
 Architecture: all
 Pre-Depends: dpkg (>= 1.17.14)
-Depends: ${misc:Depends}, ${python3:Depends}, fonts-font-awesome (>= 4.2.0~dfsg)
+Depends: ${misc:Depends}, ${python3:Depends}, fonts-font-awesome (>= 4.2.0~dfsg), python3-h11
 Conflicts: python-netlib
 Description: SSL-capable man-in-the-middle HTTP proxy
  mitmproxy is an SSL-capable man-in-the-middle HTTP proxy. It provides
