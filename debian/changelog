@@ -1,3 +1,11 @@
+mitmproxy (4.0.4-6) unstable; urgency=medium
+
+  * Fix symlinks to fontawesome (Closes: #928749)
+  * Bump-up Standards-Version
+  * Update lintian overrides
+
+ -- Sebastien Delafond <seb@debian.org>  Thu, 23 May 2019 13:30:35 +0200
+
 mitmproxy (4.0.4-5) unstable; urgency=medium
 
   * Add dependency on python3-pkg-resources (Closes: #923354)
