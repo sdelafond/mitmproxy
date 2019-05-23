@@ -23,8 +23,8 @@ case "$1" in
         # a non-linked version. Not doing so results in our package
         # being stuck in a failed state, as well as the font package
         # that we link to missing some files.
-        for L in usr/lib/python3.5/dist-packages/mitmproxy/addons/onboarding/static/fontawesome \
-                 usr/lib/python3.5/dist-packages/mitmproxy/tools/web/static/fonts ; do
+        for L in usr/lib/python3/dist-packages/mitmproxy/addons/onboardingapp/static/fontawesome \
+                 usr/lib/python3/dist-packages/mitmproxy/tools/web/static/fonts ; do
                  test -h "$L" && rm -f "$L"
         done
     ;;

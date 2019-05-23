@@ -1,2 +1,2 @@
-dir_to_symlink /usr/lib/python3.5/dist-packages/mitmproxy/addons/onboarding/static/fontawesome ../../../../../../share/fonts-font-awesome 1.0.2+dfsg-1~
-dir_to_symlink /usr/lib/python3.5/dist-packages/mitmproxy/tools/web/static/fonts ../../../../../../share/fonts-font-awesome/fonts 1.0.2+dfsg-1~
+dir_to_symlink /usr/lib/python3/dist-packages/mitmproxy/addons/onboardingapp/static/fontawesome ../../../../../../share/fonts-font-awesome 1.0.2+dfsg-1~
+dir_to_symlink /usr/lib/python3/dist-packages/mitmproxy/tools/web/static/fonts ../../../../../../share/fonts-font-awesome/fonts 1.0.2+dfsg-1~
